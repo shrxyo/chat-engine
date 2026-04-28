@@ -27,6 +27,11 @@
       font-size: 16px;
       font-weight: 600;
       color: #fff;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
 
     #messages {
@@ -50,6 +55,48 @@
     .message.mine {
       background: #5865f2;
       align-self: flex-end;
+    }
+
+    .message-author {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .message.mine .message-author {
+      color: #fff;
+    }
+
+    .message:not(.mine) .message-author {
+      color: #00aff4;
+    }
+
+    .message-text {
+      font-size: 15px;
+      color: #dcddde;
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #b9bbbe;
+    }
+
+    #toolbar button {
+      background: transparent;
+      border: none;
+      color: #00aff4;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 0;
+      text-decoration: underline;
+    }
+
+    #toolbar button:hover {
+      color: #00b8f4;
     }
 
     #input-area {
@@ -108,7 +155,13 @@
   </style>
 </head>
 <body>
-  <header># general</header>
+  <header>
+    <div># general</div>
+    <div id="toolbar">
+      <span>You: <strong id="username-label"></strong></span>
+      <button type="button" id="rename-btn">Change name</button>
+    </div>
+  </header>
   <div id="messages"></div>
   <div id="status" class="disconnected">Connecting…</div>
   <div id="input-area">
@@ -126,9 +179,35 @@
     const inputEl = document.getElementById("message-input");
     const sendBtn = document.getElementById("send-btn");
     const statusEl = document.getElementById("status");
+    const usernameLabel = document.getElementById("username-label");
+    const renameBtn = document.getElementById("rename-btn");
 
-    // Connect to the WebSocket server on the same host
-    const wsUrl = `ws://${location.host}/ws`;
+    const STORAGE_KEY = "chat-username";
+
+    function getOrSetUsername() {
+      let name = localStorage.getItem(STORAGE_KEY);
+      if (!name || !name.trim()) {
+        name = window.prompt("Choose a display name", "Guest") || "Guest";
+        name = name.trim() || "Guest";
+        localStorage.setItem(STORAGE_KEY, name);
+      }
+      return name.trim();
+    }
+
+    let myUsername = getOrSetUsername();
+    usernameLabel.textContent = myUsername;
+
+    renameBtn.addEventListener("click", () => {
+      const next =
+        window.prompt("New display name", myUsername) || myUsername;
+      myUsername = next.trim() || myUsername;
+      localStorage.setItem(STORAGE_KEY, myUsername);
+      usernameLabel.textContent = myUsername;
+    });
+
+    // Same host as the page: LAN IP, localhost, or a tunnel URL. Use wss when page is https.
+    const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${wsProto}//${location.host}/ws`;
     let socket = new WebSocket(wsUrl);
 
     socket.addEventListener("open", () => {
@@ -142,23 +221,63 @@
     });
 
     socket.addEventListener("message", (event) => {
-      appendMessage(event.data, /* mine = */ false);
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (!data || typeof data !== "object") return;
+
+      if (data.type === "history" && Array.isArray(data.messages)) {
+        for (const item of data.messages) {
+          if (
+            !item ||
+            typeof item.username !== "string" ||
+            typeof item.text !== "string"
+          ) {
+            continue;
+          }
+          const mine = item.username.trim() === myUsername.trim();
+          appendMessage(item.username, item.text, mine);
+        }
+        return;
+      }
+
+      if (
+        data.type === "chat" &&
+        typeof data.username === "string" &&
+        typeof data.text === "string"
+      ) {
+        const mine = data.username.trim() === myUsername.trim();
+        appendMessage(data.username, data.text, mine);
+      }
     });
 
     function sendMessage() {
       const text = inputEl.value.trim();
       if (!text || socket.readyState !== WebSocket.OPEN) return;
 
-      // Show message immediately on sender's side
-      appendMessage(text, /* mine = */ true);
-      socket.send(text);
+      socket.send(
+        JSON.stringify({ type: "chat", username: myUsername, text })
+      );
       inputEl.value = "";
     }
 
-    function appendMessage(text, mine) {
+    function appendMessage(username, text, mine) {
       const div = document.createElement("div");
       div.className = "message" + (mine ? " mine" : "");
-      div.textContent = text;
+
+      const author = document.createElement("div");
+      author.className = "message-author";
+      author.textContent = username;
+
+      const body = document.createElement("div");
+      body.className = "message-text";
+      body.textContent = text;
+
+      div.appendChild(author);
+      div.appendChild(body);
       messagesEl.appendChild(div);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
