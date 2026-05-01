@@ -1,4 +1,4 @@
-[project]
+z[project]
 name = "backend"
 version = "0.1.0"
 description = "chat-engine FastAPI backend"
