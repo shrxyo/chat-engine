@@ -1,7 +1,7 @@
-.PHONY: run test lint typecheck migrate
+.PHONY: run test lint typecheck migrate seed
 
 run:
-	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	PYTHONPATH=src uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 test:
 	uv run pytest
@@ -15,3 +15,6 @@ typecheck:
 
 migrate:
 	uv run alembic upgrade head
+
+seed:
+	PYTHONPATH=src uv run python scripts/seed.py
