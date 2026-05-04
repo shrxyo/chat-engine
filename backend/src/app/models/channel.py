@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
@@ -10,7 +9,7 @@ class Channel(SQLModel, table=True):
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str = Field(max_length=128, index=True)
-    description: Optional[str] = Field(default=None, max_length=1024)
+    description: str | None = Field(default=None, max_length=1024)
     is_dm: bool = Field(default=False, nullable=False)
     created_by: uuid.UUID = Field(foreign_key="users.id", nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -19,3 +18,4 @@ class Channel(SQLModel, table=True):
         nullable=False,
         sa_column_kwargs={"onupdate": datetime.utcnow},
     )
+    deleted_at: datetime | None = Field(default=None, nullable=True)

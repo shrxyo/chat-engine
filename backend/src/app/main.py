@@ -1,11 +1,20 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Annotated, Any
 
+import redis.asyncio as aioredis
 import structlog
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.database import get_session
+from app.routers.channels import router as channels_router
+from app.routers.messages import router as messages_router
+from app.routers.users import router as users_router
 
 logger = structlog.get_logger(__name__)
 
@@ -17,8 +26,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    # NullPool opens/closes connections per-request, so there is no pool to
-    # drain. Skip engine.dispose() to avoid a greenlet dependency at shutdown.
     logger.info("shutdown complete")
 
 
@@ -41,8 +48,38 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Routers will be registered here in future stories:
-    # app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(channels_router, prefix="/api")
+    app.include_router(messages_router, prefix="/api")
+    app.include_router(users_router, prefix="/api")
+
+    @app.get("/health", tags=["health"])
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/ready", tags=["health"])
+    async def ready(
+        session: Annotated[AsyncSession, Depends(get_session)],
+    ) -> Any:
+        details: dict[str, str] = {}
+
+        try:
+            await session.execute(text("SELECT 1"))
+        except Exception as exc:
+            details["db"] = str(exc)
+
+        try:
+            redis_client = aioredis.from_url(settings.REDIS_URL)
+            await redis_client.ping()
+            await redis_client.aclose()
+        except Exception as exc:
+            details["redis"] = str(exc)
+
+        if details:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "degraded", "details": details},
+            )
+        return {"status": "ok"}
 
     return app
 
