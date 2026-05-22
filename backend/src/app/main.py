@@ -15,6 +15,7 @@ from app.database import get_session
 from app.routers.channels import router as channels_router
 from app.routers.messages import router as messages_router
 from app.routers.users import router as users_router
+from app.routers.ws import router as ws_router
 
 logger = structlog.get_logger(__name__)
 
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(channels_router, prefix="/api")
     app.include_router(messages_router, prefix="/api")
     app.include_router(users_router, prefix="/api")
+    app.include_router(ws_router)  # no prefix — path is /ws/{channel_id}
 
     @app.get("/health", tags=["health"])
     async def health() -> dict[str, str]:
