@@ -19,11 +19,12 @@ env/
 .env/
 ENV/
 
-# Environment variables
+# Environment variables (track .env.example, ignore all real env files)
 .env
 .env.local
 .env.*.local
 *.env
+!.env.example
 
 # Node
 node_modules/
@@ -69,4 +70,8 @@ htmlcov/
 
 realtime-chat-platform.md
 EPIC2_CONTEXT.md
+
+# Local agent notes (per the AI Coding research: never commit private agent state)
+NOTES.md
+.cursor/sessions/
 

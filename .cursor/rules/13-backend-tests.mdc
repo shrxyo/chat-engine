@@ -1,0 +1,51 @@
+---
+description: Backend test conventions (pytest + httpx + factory_boy). Attach when editing tests.
+globs: backend/tests/**
+alwaysApply: false
+---
+
+# Backend Tests
+
+## Setup
+
+- `asyncio_mode = "auto"` is set in `pyproject.toml` — do **not** add `@pytest.mark.asyncio`.
+- Test DB and fixtures live in `tests/conftest.py`. Re-use them; don't roll your own DB setup.
+- Use `tests/factories.py` (factory-boy) for object creation. **Never** instantiate `User(...)`, `Channel(...)`, `Message(...)` inline.
+
+## Patterns
+
+```python
+async def test_<route>_<scenario>(
+    client: AsyncClient,
+    user_factory: UserFactory,
+    channel_factory: ChannelFactory,
+) -> None:
+    user = await user_factory.create()
+    channel = await channel_factory.create()
+    response = await client.post(
+        f"/api/channels/{channel.id}/messages",
+        json={"content": "hi"},
+        headers=auth_headers(user),
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["content"] == "hi"
+```
+
+- HTTP: `httpx.AsyncClient` provided by the `client` fixture.
+- WebSocket: `TestClient.websocket_connect` (sync `TestClient` is fine for WS tests).
+- Mock external APIs (OpenAI, Giphy) with `respx`. **No live API calls** in tests.
+- Each test gets a clean DB via the conftest rollback fixture. Don't depend on test order.
+
+## Coverage targets
+
+- New code: **100% line coverage** at the route/service level.
+- Repo-wide minimum (post-Epic 10): `--cov-fail-under=70`.
+- Run: `make -C backend test`.
+
+## Forbidden
+
+- `time.sleep` in tests — use `asyncio.sleep` or fast-forward fixtures.
+- Real OpenAI / Anthropic calls.
+- Tests that depend on wall-clock time (use `freezegun` if needed).
+- `print()` debug statements left in tests.

@@ -1,0 +1,48 @@
+---
+description: Docker / Compose / CI / observability rules. Attach when editing infra files.
+globs: infra/**,docker-compose*.yml,**/Dockerfile,.github/workflows/**
+alwaysApply: false
+---
+
+# Infrastructure & CI
+
+Defer to `infra/AGENTS.md` for layout and commands.
+
+## Docker
+
+- **Multi-stage builds** for every image. Stage 1 = deps + build, Stage 2 = runtime.
+- **Non-root user** in the runtime stage.
+- Pin image tags: `postgres:16`, `redis:7-alpine`, `python:3.12-slim`, `node:20-alpine`. Never `:latest`.
+- Health checks on every service in `docker-compose.yml`.
+- Env via `env_file: .env`, not hardcoded in compose.
+- Use `depends_on: condition: service_healthy` to gate startup order.
+
+## Compose ports (project-pinned)
+
+| Service     | Host | Container |
+| ----------- | ---- | --------- |
+| Postgres    | 5433 | 5432      |
+| Redis       | 6379 | 6379      |
+| Backend     | 8000 | 8000      |
+| Worker      | n/a  | n/a       |
+| Frontend    | 3000 | 3000      |
+| Prometheus  | 9090 | 9090      |
+| Grafana     | 3001 | 3000      |
+| OTel        | 4317 | 4317      |
+| Jaeger UI   | 16686| 16686     |
+
+## CI/CD (`.github/workflows/`)
+
+- Jobs run in parallel where independent (`backend-lint`, `backend-test`, `frontend-lint`, `frontend-test`).
+- Cache pip via `actions/cache` keyed on `uv.lock` hash; npm via `actions/setup-node`'s built-in cache.
+- Coverage uploaded to Codecov on `backend-test` and `frontend-test`.
+- `main` push triggers `build-images` → push to GHCR with tags `latest` and `sha-<short>` → `deploy-fly`.
+- PR open/update triggers `preview-deploy` (creates `chat-engine-pr-<num>` Fly app); PR close destroys it.
+- Pipeline must complete in **<5 minutes** typical. If a job grows past 3 min, profile and split.
+
+## Forbidden
+
+- Editing `infra/postgres/init.sql` after the initial bootstrap merged — use Alembic.
+- Hardcoded image tags or secrets.
+- Long-running containers in CI without `timeout-minutes:`.
+- Skipping health checks "temporarily".

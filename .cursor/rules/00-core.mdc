@@ -1,0 +1,25 @@
+---
+description: Core project constitution. Universal rules for any task in this repo.
+globs:
+alwaysApply: true
+---
+
+# chat-engine — Core Rules
+
+Read `AGENTS.md` and `docs/PROGRESS.md` before any task. Reference work by **backlog ID** (`S2.3`, `T6.1.4`) from `docs/BACKLOG.md`.
+
+## Non-negotiable
+
+1. **TDD.** Failing test → implementation → green. No exceptions.
+2. **Scope discipline.** Implement only the IDs assigned. Don't refactor adjacent code unprompted.
+3. **Progress file.** Update `docs/PROGRESS.md` on claim → start → done. Reset working tree and re-claim if `git push` is rejected.
+4. **Lint + typecheck must pass** before declaring done.
+5. **No commits to `main`.** Branch `feat/<id>-<slug>`, PR for review.
+6. **No secrets** anywhere except `.env` (git-ignored). Use `.env.example` to add new keys.
+7. **`chat-plan.md` is excluded by default.** Use `docs/BACKLOG.md` first; grep the plan only if the compact entry is insufficient.
+
+## Token discipline
+
+- Use JIT retrieval: grep symbols → read only matching files.
+- Don't load lockfiles, build artifacts, `node_modules`, `.venv`.
+- Prefer the smallest unit of context that solves the task.

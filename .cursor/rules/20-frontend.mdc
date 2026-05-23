@@ -1,0 +1,49 @@
+---
+description: Next.js 15 / TypeScript / Tailwind rules. Attach when editing any frontend file.
+globs: frontend/**/*.ts,frontend/**/*.tsx,frontend/**/*.css,frontend/**/*.json
+alwaysApply: false
+---
+
+# Frontend Rules (Next.js 15 + TS strict)
+
+Defer to `frontend/AGENTS.md` for layout and commands.
+
+## TypeScript
+
+- **Strict mode is on.** No `any` without an inline `// reason:` comment.
+- Prefer `unknown` and narrow with `zod` or `instanceof`.
+- All component props are explicit interfaces. No `React.FC` — use `function MyComponent(props: Props)`.
+- Path alias `@/` → `src/`. Never use deep relatives (`../../../`).
+
+## React / Next.js
+
+- **Server Components by default.** Add `"use client"` only for state, effects, refs, browser APIs, or shadcn primitives that require it.
+- One route per directory under `src/app/`.
+- Route-level loading / error / not-found go in colocated `loading.tsx`, `error.tsx`, `not-found.tsx`.
+- Layouts wrap children and never fetch user-specific data (cache at the wrong layer).
+
+## Data flow
+
+- **Reads**: TanStack Query (`useQuery`, `useInfiniteQuery`). Query keys defined in `src/lib/query-keys.ts`.
+- **Writes**: REST POST (via `lib/api.ts`) or WebSocket `send()`. Optimistic update via `queryClient.setQueryData` + rollback on error.
+- **Local UI state**: `useState`. **App-wide ephemeral state**: a Zustand store under `src/stores/`.
+- **No `useEffect` for data fetching.** Use TanStack Query.
+
+## Styling
+
+- Tailwind v4 utility classes only. No inline `style={{...}}` except for dynamic values that can't be expressed via classes.
+- Compose `cn(...)` from `lib/utils.ts` for conditional classes.
+- shadcn primitives in `components/ui/` are generated — do not hand-edit; re-run `npx shadcn@latest add <name>` to update.
+
+## WebSocket
+
+- One connection per channel, owned by `WebSocketContext`.
+- Components consume via `useWebSocket().subscribe(type, handler)`. Components never `new WebSocket()` directly.
+- Reconnect with exponential backoff + jitter (1s → 30s cap). Gap-fill on reconnect via `GET /api/channels/{id}/messages?after=<id>`.
+
+## Forbidden
+
+- `window.fetch` outside `lib/api.ts`.
+- Importing from `app/*` into `components/*` (components are route-agnostic).
+- Inline secrets / API keys — only `process.env.NEXT_PUBLIC_*` (and the server-only equivalents in route handlers).
+- `useEffect(() => fetch(...), [])`.

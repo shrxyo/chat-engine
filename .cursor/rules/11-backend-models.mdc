@@ -1,0 +1,43 @@
+---
+description: SQLModel table definitions + Alembic migrations. Attach when editing models or alembic.
+globs: backend/src/app/models/**,backend/alembic/**
+alwaysApply: false
+---
+
+# Backend Models & Migrations
+
+## Models (`backend/src/app/models/`)
+
+- One **table per file**, file name = singular snake_case noun (`user.py`, `message.py`).
+- Inherit from `SQLModel` with `table=True`.
+- **Required columns on every table:**
+  ```python
+  id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+  created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
+  ```
+- Add `updated_at` on tables that get mutated.
+- Add `deleted_at: datetime | None = None` for any table that supports soft delete (messages, channels).
+- Foreign keys use `Field(foreign_key="<table>.id")` and `ondelete="CASCADE"` only where the deletion semantics are unambiguous (e.g. reactions → message).
+- Composite primary keys: explicit `__table_args__ = (PrimaryKeyConstraint(...),)`.
+- Vector columns: `embedding: list[float] | None = Field(default=None, sa_column=Column(Vector(1536)))`.
+
+## Migrations (`backend/alembic/`)
+
+- **Append-only.** Never edit a revision once it is merged to `main`.
+- Generate: `cd backend && uv run alembic revision --autogenerate -m "<verb_noun>"`.
+- **Always review the generated diff.** Autogenerate misses: `CHECK` constraints, server defaults, index method changes, vector index definitions.
+- Apply locally: `uv run alembic upgrade head`. Test downgrade: `uv run alembic downgrade -1 && uv run alembic upgrade head`.
+- pgvector indexes are NOT auto-generated. Add manually in the migration:
+  ```python
+  op.execute(
+      "CREATE INDEX ix_messages_embedding ON messages "
+      "USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)"
+  )
+  ```
+- Filename pattern: `<revision_id>_<short_verb_phrase>.py`.
+
+## Anti-patterns
+
+- Editing schema in `init.sql` after the initial bootstrap — **use Alembic**.
+- Adding `relationship()` without a matching test that exercises eager-loading.
+- Removing `deleted_at IS NULL` filters in reads.

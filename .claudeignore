@@ -1,0 +1,81 @@
+# .cursorignore — strategic exclusion for token reduction.
+# Removes low-signal, high-token content from the agent's default context.
+# See AGENTS.md "Token discipline". Keep this list aggressive.
+
+# === Lockfiles (read via package manager, not by agent) ===
+**/uv.lock
+**/package-lock.json
+**/pnpm-lock.yaml
+**/yarn.lock
+**/poetry.lock
+**/Cargo.lock
+**/go.sum
+
+# === Build / generated artifacts ===
+**/.next/
+**/out/
+**/dist/
+**/build/
+**/.turbo/
+**/.swc/
+**/*.tsbuildinfo
+**/next-env.d.ts
+
+# === Python ===
+**/__pycache__/
+**/.venv/
+**/venv/
+**/.pytest_cache/
+**/.ruff_cache/
+**/htmlcov/
+**/.coverage
+**/coverage.xml
+**/.mypy_cache/
+**/.pyright/
+**/*.egg-info/
+
+# === Node ===
+**/node_modules/
+**/.eslintcache
+
+# === Logs and temp ===
+**/*.log
+**/*.tmp
+**/*.bak
+**/.DS_Store
+
+# === Binary / media assets (do not embed) ===
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.gif
+**/*.webp
+**/*.ico
+**/*.svg
+**/*.mp4
+**/*.mov
+**/*.pdf
+**/*.zip
+**/*.tar.gz
+
+# === Project-specific exclusions ===
+# Original product brief (~110 KB). Distilled into docs/BACKLOG.md.
+# Read via `rg "STORY X.Y" chat-plan.md -A 20` only if BACKLOG.md is insufficient.
+chat-plan.md
+
+# Generated DB schema dumps / migrations data
+**/alembic/versions/*.sql
+
+# Coverage and test reports
+**/test-results/
+**/playwright-report/
+**/*.coverage
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+
+# Large data fixtures
+**/fixtures/large/
+**/seed-data/dumps/
