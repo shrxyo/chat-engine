@@ -8,7 +8,6 @@
 infra/
 ├── postgres/
 │   └── init.sql               # pgvector + schema bootstrap
-├── docker/                    # Dockerfiles (backend, worker, frontend, gateway)
 ├── grafana/
 │   ├── dashboards/            # dashboard JSON (provisioned)
 │   └── provisioning/          # datasources, dashboard providers
@@ -20,16 +19,20 @@ infra/
 └── fly/                       # fly.toml per service (when Epic 11 lands)
 ```
 
+> Dockerfiles live next to their service code: `backend/Dockerfile`, `frontend/Dockerfile`. Multi-stage builds, non-root runtime users. A future `gateway/Dockerfile` and `worker/Dockerfile` will follow the same convention.
+
 ## Commands
 
-| Action                       | Command                                       |
-| ---------------------------- | --------------------------------------------- |
-| Bring up infra services      | `docker compose up -d postgres redis`         |
-| Full stack (with observ.)    | `docker compose --profile observability up`   |
-| Scale gateways               | `docker compose up --scale backend=3`         |
-| Stop                         | `docker compose down`                         |
-| Reset volumes                | `docker compose down -v`                      |
-| Load test                    | `k6 run infra/load-tests/websocket_flood.js`  |
+| Action                              | Command                                                |
+| ----------------------------------- | ------------------------------------------------------ |
+| **Full stack (recommended)**        | `docker compose up`                                    |
+| Infra only (postgres + redis)       | `docker compose up -d postgres redis`                  |
+| Full stack with observability       | `docker compose --profile observability up`            |
+| Scale backend replicas              | `docker compose up --scale backend=3`                  |
+| Stop all                            | `docker compose down`                                  |
+| Stop and remove volumes             | `docker compose down -v`                               |
+| Rebuild images after code change    | `docker compose build`                                 |
+| Load test                           | `k6 run infra/load-tests/websocket_flood.js`           |
 
 ## Architectural constraints
 
@@ -38,7 +41,7 @@ infra/
 - **Health checks** on every service. Compose gates startup order via `depends_on: condition: service_healthy`.
 - **Secrets** never in `docker-compose.yml`. Use `.env` (git-ignored) + `env_file:` directive.
 - **Ports** are project-pinned: Postgres 5433, Redis 6379, Backend 8000, Frontend 3000, Prometheus 9090, Grafana 3001, OTel collector 4317.
-- **Migrations** run as a one-shot `release_command` in production, not on every container start.
+- **Migrations** run via `backend/docker-entrypoint.sh` on every container start in dev (idempotent with Alembic). In production they will move to a one-shot `release_command`.
 
 ## CI/CD
 

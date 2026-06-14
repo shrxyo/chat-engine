@@ -248,6 +248,24 @@ These are tracked in Grafana (`S7.3`) and validated by k6 (`S6.4`).
 
 ## Local environment
 
-`docker-compose.yml` boots Postgres + Redis. Backend (`make -C backend run`) and frontend (`make -C frontend dev`) run on the host for hot reload. Optional `--profile observability` brings up Prometheus, Grafana, OTel collector, Jaeger.
+`docker-compose.yml` runs the full stack — Postgres, Redis, backend (FastAPI + Alembic migrations on startup), and frontend (Next.js dev server). A single `docker compose up` is all that is needed.
+
+```
+docker compose up
+```
+
+Services start in dependency order: Postgres & Redis first (healthchecked), then backend (runs `alembic upgrade head` before starting uvicorn with `--reload`), then frontend (`next dev` with source code bind-mounted for hot reload).
+
+Alternatively, run only infrastructure in Docker and the application services on the host for a lighter dev loop:
+
+```bash
+docker compose up -d postgres redis
+make -C backend install && make dev-backend
+make -C frontend install && make dev-frontend
+```
+
+Dockerfiles live at `backend/Dockerfile` and `frontend/Dockerfile` (multi-stage, non-root runtime user).
+
+Optional `--profile observability` brings up Prometheus, Grafana, OTel collector, Jaeger (Epic 7 — not yet wired).
 
 Port reservations are listed in `infra/AGENTS.md`.

@@ -11,11 +11,12 @@
 
 | Metric                  | Value      |
 | ----------------------- | ---------- |
-| Last updated            | 2026-05-22 |
+| Last updated            | 2026-06-14 |
 | Active branch (default) | `main`     |
-| Stories DONE / total    | 7 / 39     |
+| Stories DONE / total    | 8 / 39     |
 | Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
+| Currently PARTIAL       | 2 (S3.1, S11.2) |
 
 ---
 
@@ -26,7 +27,7 @@
 | S1.1 | DONE        | Monorepo: `backend/`, `frontend/`, `infra/`, root Makefile, README.   |
 | S1.2 | DONE        | FastAPI scaffold; `src/app/` layout; ruff + pyright; uv lockfile.     |
 | S1.3 | DONE        | Next.js 15 scaffold; shadcn primitives generated; TanStack Query, Zustand, zod, next-auth installed. |
-| S1.4 | DONE        | `docker-compose.yml` runs Postgres (pgvector) + Redis with healthchecks. |
+| S1.4 | DONE        | `docker-compose.yml` runs full stack: Postgres, Redis, backend (FastAPI + migrations), frontend (Next.js). `docker compose up` starts everything. `backend/Dockerfile` and `frontend/Dockerfile` added (multi-stage, non-root). |
 | S1.5 | DONE        | Initial schema migrated. `messages.embedding vector(1536)` column present. `scripts/seed.py` seeds 3 channels / 5 users / 50 messages. |
 
 ## EPIC 2 — Core Messaging
@@ -35,14 +36,14 @@
 | ---- | ----------- | -------------------------------------------------------------------------------------- |
 | S2.1 | DONE        | HTTP API for channels, messages, users; cursor pagination; soft delete; pytest covers happy/401/403/validation. |
 | S2.2 | DONE        | Single-instance WebSocket gateway. ConnectionManager. Event types in `schemas/ws.py`. JWT auth before `ws.accept()`. structlog. Both `publish()` (Redis) and in-process broadcast (Epic 6 stub). |
-| S2.3 | TODO        | Frontend chat UI. `/channels/[channelId]/page.tsx` is a placeholder; layout, sidebar, message list, input, hooks, contexts not built. |
+| S2.3 | DONE        | Three-panel Discord-style layout, WebSocketContext (reconnect + backoff), PresenceContext, useMessages (infinite query + WS updates + optimistic send), MessageList (react-virtual + infinite scroll + auto-scroll), Message, MessageInput, TypingIndicator, ChannelSidebar, MembersPanel. Vitest installed; 7 tests pass; lint + typecheck green. |
 | S2.4 | TODO        | Direct messages.                                                                       |
 
 ## EPIC 3 — Authentication
 
 | ID   | Status      | Notes                                                                |
 | ---- | ----------- | -------------------------------------------------------------------- |
-| S3.1 | TODO        | OAuth via Auth.js (GitHub + Google). Backend JWT validation exists; frontend NextAuth config missing. |
+| S3.1 | PARTIAL     | `src/auth.ts` and `app/api/auth/[...nextauth]/route.ts` created — ClientFetchError fixed, session returns null cleanly. OAuth provider wiring (GitHub + Google) and backend `/api/auth/sync` JWT exchange remain TODO. |
 | S3.2 | TODO        | Rate limiting + security headers.                                    |
 
 ## EPIC 4 — Real-time UX
@@ -114,7 +115,7 @@
 | ID    | Status | Notes |
 | ----- | ------ | ----- |
 | S11.1 | TODO   | No `.github/workflows/` yet. |
-| S11.2 | TODO   | No production Dockerfiles yet. |
+| S11.2 | PARTIAL | `backend/Dockerfile` and `frontend/Dockerfile` added (multi-stage, non-root, dev mode). Production hardening needed: `next build && next start`, standalone output, worker Dockerfile, gateway Dockerfile. |
 | S11.3 | TODO   | No `fly.toml`. |
 | S11.4 | TODO   | Preview deployments. |
 
@@ -131,6 +132,9 @@
 
 ## Activity log (newest first)
 
+- `2026-06-14` — S1.4 ENHANCED: Full-stack Docker Compose. `backend/Dockerfile` (python:3.12-slim, multi-stage, uv, `docker-entrypoint.sh` runs Alembic then uvicorn --reload), `frontend/Dockerfile` (node:20-alpine, multi-stage, npm ci, next dev). `docker-compose.yml` extended with `backend` and `frontend` services, healthchecks, `depends_on: service_healthy`, source bind-mounts for hot reload. `frontend/next.config.ts` uses `BACKEND_URL` env var for server-side API rewrite.
+- `2026-06-14` — S3.1 PARTIAL: Created `frontend/src/auth.ts` (NextAuth v5 config, conditional GitHub/Google providers) and `frontend/src/app/api/auth/[...nextauth]/route.ts` (route handler). `frontend/src/types/next-auth.d.ts` adds `session.accessToken` type. Fixes `ClientFetchError` on every page load — session now returns null cleanly until OAuth is wired.
+- `2026-06-14` — S2.3 DONE: Full frontend chat UI. Three-panel layout, WS/Presence contexts, useMessages hook (infinite query + optimistic send), MessageList (react-virtual + day groups + infinite scroll + auto-scroll), MessageInput (auto-grow, emoji picker, send on Enter), TypingIndicator (animated dots), ChannelSidebar (active highlight, unread badge), MembersPanel (online/offline status). Vitest installed; 7 tests green; lint + typecheck pass.
 - `2026-05-22` — Agent governance bootstrap: AGENTS.md (root + submodules), `.cursor/rules/*`, `.cursorignore`, `docs/{BACKLOG,PROGRESS,ARCHITECTURE,OPERATIONS,CONVENTIONS}.md`, `.env.example`, `CONTRIBUTING.md`.
 - `2026-05-22` — Backend Phase 1–2 already implemented (HTTP API + WS gateway + tests).
 - `2026-05-22` — Frontend scaffold in place; routes are placeholders.

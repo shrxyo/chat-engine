@@ -1,4 +1,7 @@
 services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg16
     env_file: .env
@@ -25,6 +28,71 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Backend (FastAPI + Alembic migrations on startup)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      # Override localhost URLs from .env with Docker service hostnames
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      RELOAD: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code so --reload picks up changes without rebuilding
+      - ./backend/src:/app/src
+      - ./backend/alembic:/app/alembic
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Frontend (Next.js dev server with hot-reload)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      # Server-side rewrite target (container-to-container)
+      BACKEND_URL: http://backend:8000
+      # Browser-side API base (always via exposed host port)
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_WS_URL: ws://localhost:8000
+      NEXTAUTH_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+    volumes:
+      # Bind-mount source for hot-reload.
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      # Anonymous volume shadows the bind mount for node_modules so the
+      # container's pre-built copy is used and the host cannot clobber it.
+      - /app/node_modules
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
       retries: 5
 
 volumes:
