@@ -35,7 +35,7 @@
 | ---- | ----------- | -------------------------------------------------------------------------------------- |
 | S2.1 | DONE        | HTTP API for channels, messages, users; cursor pagination; soft delete; pytest covers happy/401/403/validation. |
 | S2.2 | DONE        | Single-instance WebSocket gateway. ConnectionManager. Event types in `schemas/ws.py`. JWT auth before `ws.accept()`. structlog. Both `publish()` (Redis) and in-process broadcast (Epic 6 stub). |
-| S2.3 | TODO        | Frontend chat UI. `/channels/[channelId]/page.tsx` is a placeholder; layout, sidebar, message list, input, hooks, contexts not built. |
+| S2.3 | IN_PROGRESS | [agent 2026-06-14] Frontend chat UI. Building three-panel layout, WS context, messages hooks, all components. |
 | S2.4 | TODO        | Direct messages.                                                                       |
 
 ## EPIC 3 — Authentication
