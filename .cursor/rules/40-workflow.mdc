@@ -1,0 +1,85 @@
+---
+description: Multi-agent task workflow. Read when claiming, starting, completing, or being blocked on a task. Required reading at session start.
+globs:
+alwaysApply: false
+---
+
+# Workflow — Claim / Implement / Done
+
+This is the loop every agent (and human) follows. Optimistic-locking via Git as described in the AI Coding research.
+
+## 1. Orient (every session, even mid-task)
+
+```bash
+git fetch && git status
+rg "IN_PROGRESS" docs/PROGRESS.md      # what's claimed
+rg "BLOCKED"     docs/PROGRESS.md      # what's stuck
+```
+
+Read `docs/PROGRESS.md` start-to-finish (it's small by design).
+
+## 2. Claim
+
+Pick the **next unclaimed task** in dependency order (top of `docs/BACKLOG.md` per epic; later epics depend on earlier ones).
+
+```bash
+git switch -c feat/<id>-<slug>           # e.g. feat/S3.1-github-oauth
+# Edit docs/PROGRESS.md — flip <ID> to IN_PROGRESS with your handle + date
+git add docs/PROGRESS.md
+git commit -m "claim: <ID>"
+git push -u origin feat/<id>-<slug>
+```
+
+If the push is rejected: `git pull --rebase`, re-check `PROGRESS.md` — the task may have been claimed by someone else. Pick another and try again.
+
+## 3. Implement (TDD)
+
+Per the assigned story in `docs/BACKLOG.md` (or grep the full description from `chat-plan.md` if necessary):
+
+1. Write/extend the failing test for **one** task at a time.
+2. Implement the minimum to pass.
+3. `make test && make lint && make typecheck` (in the relevant submodule).
+4. Commit with `feat(<ID>): <one-line summary>` (or `test:`, `refactor:`, `fix:`).
+
+Keep commits small. Push often so the working tree on the remote is current.
+
+## 4. Blocked
+
+If you can't proceed (dependency, unclear spec, broken upstream):
+
+- Edit `docs/PROGRESS.md`: flip the ID to `BLOCKED` and write a one-line reason.
+- Tag the dependency or owner.
+- Don't sit idle — claim a different unblocked task.
+
+## 5. Done
+
+```bash
+make test && make lint && make typecheck     # green required
+# Edit docs/PROGRESS.md — flip ID to DONE
+git add -A
+git commit -m "done(<ID>): <one-line summary>"
+git push
+gh pr create --fill
+```
+
+A reviewer (human or agent in **review** mode) merges. The branch is deleted on merge.
+
+## 6. Compaction recovery
+
+If the session approaches context limit, the agent must:
+
+1. Summarize what was just done in `docs/PROGRESS.md` (one line per ID touched).
+2. Commit + push.
+3. Restart. The new session reads `PROGRESS.md` and `git log -10` to rebuild state.
+
+## Subagent isolation
+
+- **Search subagent** for cross-file lookup. Pristine context. Output: file paths + 1-line summaries.
+- **Apply subagent** for mechanical edits across files. Pristine context. Output: diff.
+- **Planning agent** (this one) never holds full file contents that a subagent could fetch on demand.
+
+## Anti-patterns
+
+- Holding a claim across a multi-day pause without committing progress.
+- Combining multiple stories in one PR — one ID per branch unless the spec says they're a unit.
+- Skipping `PROGRESS.md` updates "just this once".

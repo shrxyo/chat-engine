@@ -1,0 +1,54 @@
+---
+description: React component authoring conventions. Attach when editing components/.
+globs: frontend/src/components/**,frontend/src/app/**/page.tsx,frontend/src/app/**/layout.tsx
+alwaysApply: false
+---
+
+# Frontend Components
+
+## Anatomy
+
+```tsx
+'use client' // only if needed
+
+interface MyComponentProps {
+  channelId: string
+  onSelect?: (id: string) => void
+}
+
+export function MyComponent({ channelId, onSelect }: MyComponentProps) {
+  // hooks first
+  // derived state next
+  // handlers last
+  return <div className={cn('...', someCondition && '...')}>...</div>
+}
+```
+
+- **Named exports only** (no `export default`) for non-route components. Pages and layouts use `default export` as Next.js requires.
+- One component per file. File name = component name in `PascalCase.tsx`.
+- Hooks at the top, derived values next, handlers last, JSX at the end.
+
+## Composition
+
+- Compose shadcn primitives from `components/ui/`. Don't fork them; if a variant is missing, build a wrapper.
+- Co-locate small presentational sub-components in the same file when they're not reused.
+- Pull stateful or effect-heavy logic into a hook under `src/hooks/use<Name>.ts`.
+
+## Accessibility
+
+- Every interactive element must be keyboard-navigable (Tab + Enter / Space).
+- Use semantic HTML (`button`, `nav`, `main`) over `div` with `onClick`.
+- Buttons that wrap icons need `aria-label`.
+- `Dialog`, `DropdownMenu`, `Command` (shadcn) are a11y-correct out of the box — prefer them over hand-rolled equivalents.
+
+## Performance
+
+- Memoize only when profiling shows a need. Avoid `useMemo`/`useCallback` cargo-culting.
+- Long lists (>50 rows) use `@tanstack/react-virtual`.
+- Optimistic updates for any user-initiated mutation that would otherwise feel laggy.
+
+## Testing
+
+- Hook tests in `src/hooks/__tests__/use<Name>.test.ts` with `@testing-library/react`.
+- Component tests cover: rendering, primary user interaction, error/empty states.
+- API mocked via MSW handlers in `src/test/handlers.ts`.

@@ -1,0 +1,47 @@
+---
+description: Python/FastAPI/SQLModel rules. Auto-attached when editing any backend file.
+globs: backend/**/*.py,backend/**/*.toml,backend/**/*.ini,backend/Makefile
+alwaysApply: false
+---
+
+# Backend Rules (Python 3.12 + FastAPI)
+
+Defer to `backend/AGENTS.md` for layout and commands.
+
+## Code style
+
+- **`ruff` + `pyright` strict.** Run `make -C backend lint typecheck` before commit.
+- Async-first. `async def` everywhere; never call sync I/O inside an async route.
+- Use `structlog.get_logger(__name__)` — never `print`, never `logging.*`.
+- Type-annotate every function. Prefer `from typing import Annotated` for FastAPI deps.
+- Imports: stdlib, third-party, `app.*` — separated, sorted by ruff isort.
+
+## FastAPI patterns
+
+- Route signature: `(<path params>, body: <Schema>, current_user: CurrentUser, session: SessionDep) -> <ResponseSchema>`.
+- Use the existing dependency aliases in `app/dependencies.py` (`SessionDep`, `CurrentUser`, `ChannelMemberDep`). Add new ones there, not inline.
+- HTTPException with explicit `status_code=` and `detail=`. Never bare `raise`.
+- Response models always declared via `response_model=`.
+
+## Database
+
+- One model per file under `models/`. SQLModel `table=True` for tables, no implicit relationships unless tested.
+- UUID primary keys (`uuid.uuid4` default). `created_at`/`updated_at` on every table.
+- Soft delete via `deleted_at` — never hard delete.
+- New columns / tables require: `alembic revision --autogenerate -m "<purpose>"` + review the generated migration.
+- Never edit a merged Alembic revision; add a new one.
+
+## WebSocket
+
+- All event types live in `schemas/ws.py` `WSMessageType` enum.
+- Authenticate before `await ws.accept()`. Close with code `4001` on auth failure.
+- Every event has a Pydantic payload schema. Validate before persisting.
+- Publish via both `publish()` (Redis) and `manager.broadcast_to_channel()` until Epic 6 (`S6.1`) lands.
+
+## Forbidden
+
+- `print()` for logging.
+- `time.sleep` in async code.
+- `requests` / `httpx.Client` (sync). Use `httpx.AsyncClient`.
+- Wildcard imports.
+- Inline raw SQL except in migrations or read-only EXPLAIN scripts.

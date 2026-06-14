@@ -1,0 +1,37 @@
+---
+description: FastAPI routers (HTTP + WebSocket). Attach when editing routes.
+globs: backend/src/app/routers/**,backend/src/app/schemas/**
+alwaysApply: false
+---
+
+# Backend Routers & Schemas
+
+## Routers (`backend/src/app/routers/`)
+
+- Routes are **thin**: validate → call service or single DB op → return schema. Move multi-step logic into `services/`.
+- Group by resource: `channels.py`, `messages.py`, `users.py`, `search.py`, `auth.py`. Don't cross-pollinate.
+- Always set `tags=[<resource>]` on the `APIRouter`.
+- Use the dependency aliases (`SessionDep`, `CurrentUser`, `ChannelMemberDep`).
+- Pagination: **cursor-based** (`?before=<uuid>&limit=50`) — never offset.
+- Soft delete on `DELETE`: set `deleted_at`, never `session.delete()`.
+
+## Schemas (`backend/src/app/schemas/`)
+
+- **Never** return a SQLModel table directly from a route. Always project through a Pydantic response schema in `schemas/`.
+- One file per resource. Naming:
+  - `<Resource>CreateRequest`, `<Resource>UpdateRequest`, `<Resource>Response`, `<Resource>ListResponse`.
+- Use `model_config = ConfigDict(from_attributes=True)` on response schemas that hydrate from ORM rows.
+- WebSocket payloads live in `schemas/ws.py` keyed by the `WSMessageType` enum.
+
+## WebSocket (`routers/ws.py`)
+
+- One handler function per `WSMessageType` (`_handle_message_new`, `_handle_typing`, …).
+- Validate payloads with the matching `*Payload` schema. On `ValidationError`, send `error` event and continue the loop.
+- Auth is performed in the endpoint before `ws.accept()`. Membership check uses `ChannelMembership` lookup.
+- Always `try/except` the receive loop; never let an unexpected exception kill the server.
+- Broadcast via `publish()` (Redis) AND `manager.broadcast_to_channel()` (in-process) — both, until Epic 6 (`S6.1`) makes Redis the single source.
+
+## Tests
+
+- For every new HTTP route: at least three tests — happy path, 401/403, validation error.
+- For every new WebSocket event type: at least two tests — happy path + invalid payload.

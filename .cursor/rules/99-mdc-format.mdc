@@ -1,0 +1,50 @@
+---
+description: Meta-rule. Conventions for authoring new .cursor/rules/*.mdc files.
+globs: .cursor/rules/**
+alwaysApply: false
+---
+
+# Authoring `.cursor/rules/*.mdc`
+
+## File naming
+
+`<NN>-<scope>.mdc` where `NN` is a 2-digit priority:
+
+| Range | Purpose                                                |
+| ----- | ------------------------------------------------------ |
+| 00–09 | Universal (`alwaysApply: true`). **Cap at 200 words.** |
+| 10–19 | Backend scoped                                          |
+| 20–29 | Frontend scoped                                         |
+| 30–39 | Infra / CI / observability                             |
+| 40–49 | Workflow / process (description-triggered)             |
+| 50–89 | Reserved for future domains                            |
+| 90–99 | Meta (this rule lives here)                            |
+
+## Frontmatter
+
+```yaml
+---
+description: One sentence semantic summary. Used to auto-route rules to a prompt.
+globs: comma,separated,glob,patterns  # leave empty if description-triggered
+alwaysApply: false                    # only true for 00–09 core rules
+---
+```
+
+- **`description`** — write as the agent would: "Use when …". Be specific so semantic routing is reliable.
+- **`globs`** — auto-attach when matching files are in the working set. Use `,` separator, no quotes.
+- **`alwaysApply`** — `true` only for the universal constitution. Every always-applied byte taxes every prompt.
+
+## Body
+
+- Markdown headings; no prose paragraphs longer than 3 lines.
+- Lists and tables over prose.
+- Examples in fenced code blocks with a language tag.
+- Cross-reference other rules by filename (e.g. "see `11-backend-models.mdc`") rather than copy/pasting.
+- No prose like "remember to" — write directives ("**Do** X", "**Forbidden**: Y").
+
+## Anti-patterns
+
+- Putting code generation templates in rules — those belong in `scripts/` or `docs/`.
+- `alwaysApply: true` on anything domain-specific — taxes the global token budget.
+- Duplicating content across rules — link, don't copy.
+- Multi-paragraph "philosophy" sections — irrelevant at inference time.

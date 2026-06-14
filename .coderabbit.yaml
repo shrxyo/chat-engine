@@ -1,0 +1,453 @@
+# .coderabbit.yaml — CodeRabbit configuration for chat-engine
+# Docs: https://docs.coderabbit.ai/reference/configuration
+#
+# Principles:
+#  1. Assertive reviews — this is a portfolio project; catching real issues matters more than noise.
+#  2. AI-code-aware checks — agents produce characteristic bugs; we enumerate them explicitly.
+#  3. Scope discipline — CodeRabbit enforces the same rules as AGENTS.md (one story per PR, etc.).
+#  4. Agent-friendly output — "Prompt for AI Agents" enabled so CodeRabbit's inline comments
+#     can be fed back to a fixing agent without manual reformatting.
+
+language: en-US
+early_access: false
+
+# ---------------------------------------------------------------------------
+# Reviews
+# ---------------------------------------------------------------------------
+reviews:
+  profile: assertive       # more feedback; this is worth the noise on a portfolio project
+  request_changes_workflow: false   # warnings only; we don't want agent PRs blocked on style nits
+
+  high_level_summary: true
+  high_level_summary_in_walkthrough: false
+
+  collapse_walkthrough: false        # keep visible — easier to act on during solo dev
+  sequence_diagrams: true            # valuable for WebSocket flow changes
+  changed_files_summary: true
+  related_issues: true
+  related_prs: true
+
+  # Surface AI-agent prompts inline so a fixing agent can receive the exact instruction
+  agent_instructions_in_comments: true
+
+  poem: false
+  labeling_instructions:
+    - label: backend
+      instructions: Apply when the PR touches backend/src/ or backend/tests/ or backend/alembic/.
+    - label: frontend
+      instructions: Apply when the PR touches frontend/src/ or frontend/public/.
+    - label: infra
+      instructions: Apply when the PR touches docker-compose*.yml, infra/, Dockerfiles, or .github/workflows/.
+    - label: ai-feature
+      instructions: Apply when the PR touches the arq worker, embeddings, RAG, semantic search, or @assistant responses.
+    - label: database
+      instructions: Apply when the PR adds or modifies SQLModel models or Alembic migrations.
+    - label: websocket
+      instructions: Apply when the PR touches the WebSocket gateway, ConnectionManager, Redis Pub/Sub, or ws.py.
+    - label: security
+      instructions: Apply when the PR touches authentication, JWT handling, rate limiting, secrets, or CORS.
+    - label: docs
+      instructions: Apply when the only changed files are .md files or docs/.
+
+  auto_apply_labels: true
+
+  auto_review:
+    enabled: true
+    incremental: true
+    drafts: false
+    ignore_title_keywords:
+      - "[skip-review]"
+      - "WIP"
+      - "wip"
+
+  # ---------------------------------------------------------------------------
+  # Pre-merge checks
+  # ---------------------------------------------------------------------------
+  pre_merge_checks:
+    title_check:
+      mode: error
+      # Must match: feat(S2.3): ... or fix(short-slug): ... etc.
+      # Matches the convention in AGENTS.md and docs/CONVENTIONS.md.
+      requirements: >
+        PR title must follow conventional commit format with a story/backlog ID:
+        `<type>(<ID>): <imperative description>` where type is one of
+        feat, fix, refactor, test, docs, chore, ci, perf.
+        Example: `feat(S2.3): MessageList virtualization`.
+        Backlog IDs look like S1.1, S2.3, S10.2, or a short slug for chore/docs PRs.
+
+    description_check:
+      mode: warning
+
+    linked_issue_assessment:
+      mode: warning
+
+    custom_checks:
+      - name: scope-discipline
+        mode: error
+        instructions: >
+          Verify that this PR implements **only** the story IDs mentioned in its title.
+          If the PR touches code unrelated to those IDs (e.g. refactoring a module that
+          is not part of the assigned story), flag it as a scope violation.
+          Exception: updating docs/PROGRESS.md and docs/ARCHITECTURE.md is always
+          allowed in any PR.
+
+      - name: progress-file-updated
+        mode: error
+        instructions: >
+          The file docs/PROGRESS.md must be changed in this PR.
+          If it is not present in the diff, report a failure with the message:
+          "docs/PROGRESS.md must be updated to reflect the new status of the IDs
+          implemented in this PR (IN_PROGRESS → DONE, or BLOCKED with a reason)."
+
+      - name: no-merged-migration-edited
+        mode: error
+        instructions: >
+          Check for edits to existing Alembic migration files under backend/alembic/versions/.
+          If any existing migration file (already present in the base branch) has been modified
+          rather than a new file added, flag it as a critical violation.
+          The rule: migrations are append-only; never edit a merged revision.
+
+      - name: no-secrets-or-env-files
+        mode: error
+        instructions: >
+          Check that no .env files (other than .env.example), private keys, API tokens,
+          OAuth secrets, or credentials have been committed.
+          Flag any file matching: .env, .env.local, .env.production, *.pem, *.key,
+          credentials.json, or any file containing strings matching common secret patterns
+          (e.g. `sk-...`, `ghp_...`, `AKIA...`, base64 strings >40 chars in a config file).
+
+      - name: no-print-statements-in-prod
+        mode: warning
+        instructions: >
+          In backend Python files (backend/src/), flag any use of `print()` that is not
+          inside a test file. All logging must use `structlog.get_logger()`.
+          In frontend TypeScript files, flag any `console.log()` or `console.debug()`
+          that is not inside a test file. `console.error()` is allowed in error boundaries.
+
+      - name: soft-delete-only
+        mode: error
+        instructions: >
+          In backend SQLModel services and routers, flag any direct `session.delete(model)`
+          calls against tables that have a `deleted_at` column (User, Channel, Message).
+          The only correct deletion pattern is setting `model.deleted_at = datetime.now(UTC)`.
+
+  # ---------------------------------------------------------------------------
+  # Path-specific review instructions (AI-code-aware, project-specific)
+  # ---------------------------------------------------------------------------
+  path_instructions:
+
+    # Backend — general
+    - path: "backend/src/app/**/*.py"
+      instructions: >
+        Review against the patterns in backend/AGENTS.md and docs/CONVENTIONS.md.
+
+        AI-generated code bugs to watch for specifically:
+        - Async/sync mismatch: any `requests.*` or `httpx.Client` (sync) call inside an
+          `async def` function. Only `httpx.AsyncClient` is allowed.
+        - Sync DB driver usage: `psycopg2`, `sqlalchemy.create_engine` (sync) instead of
+          `asyncpg` / `sqlalchemy.ext.asyncio`.
+        - Missing `await` on coroutines — especially on `session.execute()`, `session.commit()`,
+          `session.refresh()`. These silently return coroutine objects in Python if not awaited.
+        - Unconstrained background tasks: any use of `BackgroundTasks` for long-running work
+          (embeddings, LLM calls) — these must go through the arq worker queue instead.
+        - Session leaks: `AsyncSession` created inside a function without `async with` or
+          `try/finally`. Always use the context manager.
+        - Catching broad `Exception` without re-raising or logging — especially in WebSocket
+          handlers where it can silently swallow disconnects.
+        - Unvalidated user input passed to SQL: ensure all DB queries use parameterised
+          statements via SQLAlchemy / SQLModel; flag any f-string or `.format()` in a
+          `text()` call.
+        - JWT decoded without verifying the algorithm — must specify `algorithms=["HS256"]`
+          explicitly in `jwt.decode()`. Algorithm confusion attacks are a real vulnerability.
+        - Missing `deleted_at IS NULL` filter on any query against a soft-deletable table
+          (users, channels, messages). Raw `select(Message)` without this filter is a bug.
+        - Hard-coded `SECRET_KEY`, `OPENAI_API_KEY`, or any credential. Must be read from
+          `get_settings()`.
+
+    # Models + migrations
+    - path: "backend/src/app/models/**/*.py"
+      instructions: >
+        - Every table model must have: `id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)`
+          and `created_at`. Flag missing fields.
+        - Tables that can be deleted must have `deleted_at: datetime | None = None`.
+        - Foreign key columns must include explicit `Field(foreign_key="<table>.id")`.
+        - The `embedding` column for the messages model must be nullable
+          (`list[float] | None`) and not required on construction — the AI worker populates it async.
+        - Never define `__tablename__` inconsistently with the file name.
+
+    - path: "backend/alembic/versions/**/*.py"
+      instructions: >
+        - Verify this is a NEW file (not editing an existing revision). Editing a merged
+          migration is a critical bug.
+        - Autogenerate often misses: vector index creation (`USING ivfflat`), server defaults,
+          CHECK constraints, partial indexes. Verify these are hand-coded if the story requires them.
+        - Downgrade function must be present and correct. If the upgrade creates a table,
+          the downgrade must drop it.
+        - Alembic chain: `revision` must match the `down_revision` of the next migration.
+          Flag if the chain is broken.
+
+    # WebSocket and connection manager
+    - path: "backend/src/app/routers/ws.py"
+      instructions: >
+        AI-generated WebSocket bugs to watch for:
+        - Authentication AFTER `ws.accept()`: auth and membership checks must happen before
+          `await ws.accept()`. Any code that calls `ws.accept()` before verifying the JWT is
+          a security bug — unauthenticated clients can hold open connections.
+        - Missing `except WebSocketDisconnect` in the receive loop — will leave orphaned
+          connections in the manager.
+        - Broadcast-before-persist pattern: the message must be written to Postgres and
+          committed BEFORE it is broadcast. Broadcasting an un-persisted message means clients
+          see messages that may not survive a server restart.
+        - Missing `manager.disconnect()` in the `finally` block — connection leak.
+        - `publish()` call without the corresponding `manager.broadcast_to_channel()` (or vice
+          versa) until Epic 6 (S6.1) lands. Both must be called in the single-instance phase.
+        - Typing events must not be persisted to the DB — they are ephemeral. Flag any DB write
+          in a typing handler.
+        - `@assistant` detection must only trigger embedding+RAG for that one message type,
+          not all messages.
+
+    - path: "backend/src/app/services/connection_manager.py"
+      instructions: >
+        - The connection registry must be per-channel: `dict[uuid.UUID, dict[uuid.UUID, WebSocket]]`.
+          A flat list of connections is wrong and will broadcast to wrong channels.
+        - `broadcast_to_channel` with `exclude_user_id` must actually exclude the sender.
+          AI agents often forget this, causing the sender to see their own message twice.
+        - No global mutable state except the manager singleton itself. Thread-safety is not
+          required (asyncio single-thread) but re-entrancy during broadcast must be safe
+          (iterate over a copy of the connections list).
+
+    # AI worker
+    - path: "backend/src/app/worker/**/*.py"
+      instructions: >
+        AI worker-specific bugs:
+        - OpenAI API calls must be wrapped in `tenacity.retry` with at least 3 retries and
+          exponential backoff. A plain `await client.embeddings.create(...)` without retry
+          is fragile.
+        - Embedding jobs must handle the case where `message.content` is empty or whitespace
+          — OpenAI will error. Guard with an early return.
+        - After writing the embedding back, the session must be committed. A missing
+          `await session.commit()` leaves the embedding only in the ORM cache.
+        - Worker functions must log job start, completion, and failure with structlog including
+          `message_id` and duration. Bare `pass` in an except block is a bug.
+        - arq job functions must match the signature `async def fn(ctx, ...)` — the `ctx`
+          argument is required even if unused.
+        - The assistant RAG handler must verify the @assistant mention is stripped from the
+          query before embedding it. Embedding "@assistant ..." inflates the query vector.
+
+    # Frontend — hooks and WebSocket
+    - path: "frontend/src/hooks/**/*.ts"
+      instructions: >
+        AI-generated React hook bugs:
+        - `useEffect` with a missing or incorrect dependency array is the most common agent
+          mistake. Every dependency used inside the effect must be in the array.
+        - WebSocket connections created inside a `useEffect` without a cleanup `return () => ws.close()`
+          leak connections on re-render. Flag any WebSocket construction without cleanup.
+        - Stale closure: using state values captured at effect creation time instead of refs.
+          If `channel_id` or `token` can change, they must be in the dependency array or a ref.
+        - Infinite loop pattern: `setQueryData` called unconditionally inside a `useQuery`'s
+          `onSuccess` that also invalidates the same query.
+        - `useCallback` / `useMemo` with empty `[]` deps but referencing props — the classic
+          stale value bug.
+
+    - path: "frontend/src/contexts/WebSocketContext.tsx"
+      instructions: >
+        - Only ONE WebSocket connection per channel must exist at any time. Flag any pattern
+          that creates a new connection without closing the previous one.
+        - The reconnect loop must have a maximum backoff cap (30s) and jitter.
+          An infinite `setTimeout(() => connect(), delay * 2)` without a cap will eventually
+          freeze the tab.
+        - Gap-fill on reconnect (`GET /api/channels/{id}/messages?after=<id>`) must be called
+          after the WS is re-established, not before. Messages received before the HTTP
+          response are fine (deduplicate by ID).
+
+    # Frontend — components
+    - path: "frontend/src/components/**/*.tsx"
+      instructions: >
+        - Server vs client boundary: any component using `useState`, `useEffect`, `useContext`,
+          or browser APIs must have `"use client"` at the top. Flag if missing.
+        - Direct `window.fetch()` calls — use `src/lib/api.ts` instead.
+        - Unguarded `params.channelId` without null-check when routing; Next.js dynamic params
+          may be undefined during static generation.
+        - Accessibility: every `<button>` that contains only an icon must have an `aria-label`.
+          Every interactive element must be keyboard-navigable (no `onClick` on `<div>` without
+          `role="button"` and `onKeyDown`).
+        - `dangerouslySetInnerHTML` anywhere — flag as a potential XSS vector. Message content
+          must be sanitised before rendering.
+        - Optimistic updates: any `useMutation` that modifies message state must have an
+          `onError` rollback via `queryClient.setQueryData`. An update without rollback will
+          show phantom messages on failure.
+
+    # Auth
+    - path: "frontend/src/app/auth/**"
+      instructions: >
+        - The sign-in page must redirect authenticated users away (don't show sign-in to
+          someone who is already logged in).
+        - OAuth callback must not expose the raw error from the provider to the user —
+          generic error UI only; log details server-side.
+        - `NEXTAUTH_SECRET` must not appear in any `NEXT_PUBLIC_*` environment variable.
+
+    - path: "backend/src/app/dependencies.py"
+      instructions: >
+        - `get_current_user` must return `None` or raise `HTTPException(401)` on any JWT
+          failure — never return a default/anonymous user object.
+        - JWT verification must pass `algorithms=["HS256"]` explicitly. Algorithm confusion
+          (e.g. `alg: none`) is a known attack vector.
+        - `ChannelMemberDep` must verify both that the channel exists and that the user is
+          a member. A missing channel check allows probing channel existence without membership.
+
+    # Infrastructure and CI
+    - path: "docker-compose*.yml"
+      instructions: >
+        - No hardcoded passwords, connection strings, or API keys. All secrets via `env_file:`.
+        - Every service must have a `healthcheck`.
+        - Image tags must be pinned (e.g. `redis:7-alpine`, not `redis:latest`).
+        - Port bindings: follow the project-pinned mapping in infra/AGENTS.md.
+          Any deviation (e.g. exposing Postgres on 5432 instead of 5433) is a conflict.
+
+    - path: ".github/workflows/**"
+      instructions: >
+        - `actions/checkout` must pin to a specific SHA or tagged version, not `@main`.
+        - Secrets referenced as `${{ secrets.* }}` must not be echoed in `run:` steps.
+        - CI must fail on test failure — no `continue-on-error: true` on test jobs.
+        - Each job should declare a `timeout-minutes` to prevent hung runners.
+        - Caching: backend uses `uv.lock` as cache key; frontend uses `package-lock.json`.
+
+    # Docs
+    - path: "docs/**/*.md"
+      instructions: >
+        - Story IDs (S1.1, S2.3, etc.) must match the IDs defined in docs/BACKLOG.md.
+          Flag any new IDs that don't exist there.
+        - docs/PROGRESS.md status values must only be: TODO, IN_PROGRESS, BLOCKED, DONE.
+        - If an architectural decision is documented, it must match what is in
+          docs/ARCHITECTURE.md. Flag contradictions.
+
+    - path: "**/*.md"
+      instructions: >
+        - No lorem ipsum or placeholder text left in committed docs.
+        - All cross-referenced file paths must exist in the repo.
+        - Mermaid diagram syntax must be valid.
+
+# ---------------------------------------------------------------------------
+# Tools (enable relevant, disable irrelevant for this stack)
+# ---------------------------------------------------------------------------
+tools:
+  ruff:
+    enabled: true             # Python linter — matches our pyproject.toml config
+
+  eslint:
+    enabled: true             # TypeScript/JS linter
+
+  biome:
+    enabled: false            # We use eslint + prettier, not biome
+
+  markdownlint:
+    enabled: true
+
+  actionlint:
+    enabled: true             # Validates GitHub Actions YAML
+
+  hadolint:
+    enabled: true             # Dockerfile linter (needed for Epic 11)
+
+  shellcheck:
+    enabled: true             # Shell scripts in Makefile targets and CI
+
+  checkov:
+    enabled: true             # IaC security scanning (docker-compose, future Terraform)
+
+  trivy:
+    enabled: true             # Security scan for IaC and containers
+
+  gitleaks:
+    enabled: true             # Secret scanning
+
+  trufflehog:
+    enabled: true             # Layered secret scanning with verification
+
+  semgrep:
+    enabled: true             # Pattern-based bug and security detection
+
+  opengrep:
+    enabled: true             # Complementary to semgrep; same rule format
+
+  osv_scanner:
+    enabled: true             # Known vulnerability scanning for Python/Node deps
+
+  yamllint:
+    enabled: true             # docker-compose and CI YAML
+
+  golangci_lint:
+    enabled: true             # For Go gateway (Epic 6, S6.2)
+
+  pylint:
+    enabled: false            # Ruff covers everything pylint does; avoid double-reporting
+
+  flake8:
+    enabled: false            # Same; ruff supersedes flake8
+
+  oxc:
+    enabled: false            # We use eslint; oxlint would duplicate
+
+  presidio:
+    enabled: true             # PII detection — important if user data appears in fixtures or logs
+
+  checkmake:
+    enabled: true             # Makefile linting
+
+  dotenv_lint:
+    enabled: true             # .env.example style checks
+
+  languagetool:
+    enabled: true             # Grammar/style for docs
+    disabled_categories:
+      - TYPOS                 # Too noisy for technical docs
+      - TYPOGRAPHY
+      - CASING
+
+  github_checks:
+    enabled: true
+    timeout_ms: 120000        # 2 minutes; our CI target is <5 min total
+
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
+chat:
+  auto_reply: true
+
+# ---------------------------------------------------------------------------
+# Knowledge base
+# ---------------------------------------------------------------------------
+knowledge_base:
+  opt_out: false
+  web_search:
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# Finishing touches (on-demand via checkboxes in PR)
+# ---------------------------------------------------------------------------
+finishing_touches:
+  docstrings:
+    enabled: true
+  unit_tests:
+    enabled: true
+  simplify:
+    enabled: false            # Not on by default; too aggressive for agent-generated code
+
+  custom_recipes:
+    - name: "check ai patterns"
+      enabled: true
+      instructions: >
+        Review the changed files specifically for AI-agent-generated code patterns.
+        Look for: missing awaits, sync I/O in async functions, bare Exception catches,
+        missing soft-delete filters, broadcasting before persisting, session leaks,
+        JWT algorithm confusion, stale React closures, useEffect missing deps,
+        WebSocket connections without cleanup, and optimistic updates without rollback.
+        Produce a focused list of only genuine bugs — no style comments.
+
+    - name: "scope check"
+      enabled: true
+      instructions: >
+        Compare the PR's changed files against the story IDs in the PR title.
+        List any files changed that do not belong to those stories.
+        Reference docs/BACKLOG.md for each story's scope.
+        Flag if docs/PROGRESS.md is not updated.
