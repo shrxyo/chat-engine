@@ -24,6 +24,13 @@ Realtime chat platform. Monorepo. Three top-level workspaces:
 
 ## Setup (deterministic)
 
+**Full stack via Docker (recommended — single command):**
+```bash
+cp .env.example .env
+docker compose up          # postgres, redis, backend (with migrations), frontend
+```
+
+**Local dev (application code on host, infra in Docker):**
 ```bash
 cp .env.example .env
 docker compose up -d postgres redis
