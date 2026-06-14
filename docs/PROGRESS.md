@@ -11,9 +11,9 @@
 
 | Metric                  | Value      |
 | ----------------------- | ---------- |
-| Last updated            | 2026-05-22 |
+| Last updated            | 2026-06-14 |
 | Active branch (default) | `main`     |
-| Stories DONE / total    | 7 / 39     |
+| Stories DONE / total    | 8 / 39     |
 | Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
 
@@ -35,7 +35,7 @@
 | ---- | ----------- | -------------------------------------------------------------------------------------- |
 | S2.1 | DONE        | HTTP API for channels, messages, users; cursor pagination; soft delete; pytest covers happy/401/403/validation. |
 | S2.2 | DONE        | Single-instance WebSocket gateway. ConnectionManager. Event types in `schemas/ws.py`. JWT auth before `ws.accept()`. structlog. Both `publish()` (Redis) and in-process broadcast (Epic 6 stub). |
-| S2.3 | IN_PROGRESS | [agent 2026-06-14] Frontend chat UI. Building three-panel layout, WS context, messages hooks, all components. |
+| S2.3 | DONE        | Three-panel Discord-style layout, WebSocketContext (reconnect + backoff), PresenceContext, useMessages (infinite query + WS updates + optimistic send), MessageList (react-virtual + infinite scroll + auto-scroll), Message, MessageInput, TypingIndicator, ChannelSidebar, MembersPanel. Vitest installed; 7 tests pass; lint + typecheck green. |
 | S2.4 | TODO        | Direct messages.                                                                       |
 
 ## EPIC 3 — Authentication
@@ -131,6 +131,7 @@
 
 ## Activity log (newest first)
 
+- `2026-06-14` — S2.3 DONE: Full frontend chat UI. Three-panel layout, WS/Presence contexts, useMessages hook (infinite query + optimistic send), MessageList (react-virtual + day groups + infinite scroll + auto-scroll), MessageInput (auto-grow, emoji picker, send on Enter), TypingIndicator (animated dots), ChannelSidebar (active highlight, unread badge), MembersPanel (online/offline status). Vitest installed; 7 tests green; lint + typecheck pass.
 - `2026-05-22` — Agent governance bootstrap: AGENTS.md (root + submodules), `.cursor/rules/*`, `.cursorignore`, `docs/{BACKLOG,PROGRESS,ARCHITECTURE,OPERATIONS,CONVENTIONS}.md`, `.env.example`, `CONTRIBUTING.md`.
 - `2026-05-22` — Backend Phase 1–2 already implemented (HTTP API + WS gateway + tests).
 - `2026-05-22` — Frontend scaffold in place; routes are placeholders.
