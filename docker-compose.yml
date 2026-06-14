@@ -82,6 +82,8 @@ services:
       # Bind-mount source for hot-reload.
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
+      # Bind-mount Next config so rewrites/config changes apply without rebuild.
+      - ./frontend/next.config.ts:/app/next.config.ts
       # Anonymous volume shadows the bind mount for node_modules so the
       # container's pre-built copy is used and the host cannot clobber it.
       - /app/node_modules

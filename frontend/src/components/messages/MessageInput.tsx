@@ -16,6 +16,7 @@ const QUICK_EMOJI = ['👍', '❤️', '😂', '🎉', '🔥', '👀', '✅', '�
 
 interface MessageInputProps {
   channelName: string
+  isDm?: boolean
   onSend: (content: string) => void
   onTyping?: () => void
   onStopTyping?: () => void
@@ -24,6 +25,7 @@ interface MessageInputProps {
 
 export function MessageInput({
   channelName,
+  isDm = false,
   onSend,
   onTyping,
   onStopTyping,
@@ -82,6 +84,8 @@ export function MessageInput({
     onTyping?.()
   }
 
+  const placeholder = isDm ? `Message ${channelName}` : `Message #${channelName}`
+
   return (
     <div className="border-t bg-background px-4 py-3">
       <div
@@ -116,12 +120,12 @@ export function MessageInput({
         <textarea
           ref={textareaRef}
           rows={1}
-          placeholder={`Message #${channelName}`}
+          placeholder={placeholder}
           className="max-h-[200px] flex-1 resize-none bg-transparent text-sm leading-relaxed placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled}
           onKeyDown={handleKeyDown}
           onChange={handleInput}
-          aria-label={`Message #${channelName}`}
+          aria-label={placeholder}
           aria-multiline
         />
 

@@ -32,6 +32,14 @@ export interface ChannelDetail extends Channel {
   members: Member[]
 }
 
+export interface DMChannel {
+  id: string
+  is_dm: true
+  other_user: User
+  created_at: string
+  updated_at: string
+}
+
 export interface Message {
   id: string
   channel_id: string

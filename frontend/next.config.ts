@@ -10,9 +10,11 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
+      // Proxy backend API calls, but exclude NextAuth's own /api/auth/* routes
+      // so they are handled by the local route handler instead of FastAPI.
       {
-        source: '/api/:path*',
-        destination: `${backendUrl}/api/:path*`,
+        source: '/api/:path((?!auth/).*)',
+        destination: `${backendUrl}/api/:path`,
       },
     ]
   },

@@ -27,6 +27,7 @@ async def list_channels(
         .join(ChannelMembership, Channel.id == ChannelMembership.channel_id)
         .where(ChannelMembership.user_id == current_user.id)
         .where(Channel.deleted_at.is_(None))
+        .where(Channel.is_dm.is_(False))
         .order_by(Channel.name)
     )
     return [ChannelResponse.model_validate(c) for c in result.scalars().all()]
