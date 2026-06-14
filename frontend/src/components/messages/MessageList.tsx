@@ -9,6 +9,7 @@ import { useTypingIndicator } from '@/hooks/useTypingIndicator'
 import { Message } from './Message'
 import { TypingIndicator } from './TypingIndicator'
 import { MessageInput } from './MessageInput'
+import { ChannelHeader, useChannelDisplayInfo } from '@/components/layout/ChannelHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Message as MessageType } from '@/types'
 
@@ -49,12 +50,12 @@ function buildItems(messages: MessageType[]): ListItem[] {
 
 interface MessageListProps {
   channelId: string
-  channelName: string
 }
 
-export function MessageList({ channelId, channelName }: MessageListProps) {
+export function MessageList({ channelId }: MessageListProps) {
   const { data: session } = useSession()
   const currentUserId = session?.user?.id as string | undefined
+  const { displayName: channelName, isDm } = useChannelDisplayInfo(channelId)
 
   const { messages, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, sendMessage, editMessage, deleteMessage } =
     useMessages(channelId)
@@ -147,6 +148,8 @@ export function MessageList({ channelId, channelName }: MessageListProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <ChannelHeader channelId={channelId} />
+
       {/* Scrollable message area */}
       <div
         ref={parentRef}
@@ -203,6 +206,7 @@ export function MessageList({ channelId, channelName }: MessageListProps) {
       {/* Message input */}
       <MessageInput
         channelName={channelName}
+        isDm={isDm}
         onSend={sendMessage}
         onTyping={notifyTyping}
         onStopTyping={notifyStopTyping}

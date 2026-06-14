@@ -8,9 +8,6 @@ export default async function ChannelPage({ params }: ChannelPageProps) {
   const { channelId } = await params
 
   return (
-    <MessageList
-      channelId={channelId}
-      channelName={channelId}
-    />
+    <MessageList channelId={channelId} />
   )
 }

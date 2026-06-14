@@ -67,6 +67,36 @@ async def test_list_channels_no_token(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_channels_excludes_dm_channels(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user = UserFactory.build()
+    other = UserFactory.build()
+    db_session.add(user)
+    db_session.add(other)
+    await db_session.flush()
+
+    public = ChannelFactory.build(created_by=user.id, is_dm=False)
+    dm = ChannelFactory.build(created_by=user.id, is_dm=True, name="dm-test")
+    db_session.add(public)
+    db_session.add(dm)
+    await db_session.flush()
+
+    db_session.add(
+        ChannelMembershipFactory.build(user_id=user.id, channel_id=public.id)
+    )
+    db_session.add(ChannelMembershipFactory.build(user_id=user.id, channel_id=dm.id))
+    db_session.add(ChannelMembershipFactory.build(user_id=other.id, channel_id=dm.id))
+    await db_session.commit()
+
+    response = await client.get("/api/channels", headers=auth_header(user.id))
+    assert response.status_code == 200
+    ids = [c["id"] for c in response.json()]
+    assert str(public.id) in ids
+    assert str(dm.id) not in ids
+
+
+@pytest.mark.asyncio
 async def test_list_channels_excludes_soft_deleted(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:

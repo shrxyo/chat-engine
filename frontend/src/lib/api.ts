@@ -4,7 +4,7 @@
  * Never call window.fetch() directly elsewhere.
  */
 
-import type { Channel, ChannelDetail, Member, Message, MessageListResponse, User } from '@/types'
+import type { Channel, ChannelDetail, DMChannel, Member, Message, MessageListResponse, User } from '@/types'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
@@ -48,6 +48,15 @@ export const api = {
       apiFetch<ChannelDetail>(`/api/channels/${id}`, token),
     members: (id: string, token?: string | null) =>
       apiFetch<Member[]>(`/api/channels/${id}/members`, token),
+  },
+
+  dm: {
+    list: (token?: string | null) => apiFetch<DMChannel[]>('/api/dm', token),
+    create: (userId: string, token?: string | null) =>
+      apiFetch<DMChannel>('/api/dm', token, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: userId }),
+      }),
   },
 
   messages: {

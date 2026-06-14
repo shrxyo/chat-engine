@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { DMSection } from '@/components/layout/DMSection'
 import type { Channel } from '@/types'
 
 interface ChannelItemProps {
@@ -90,6 +91,8 @@ export function ChannelSidebar() {
               />
             ))}
       </div>
+
+      <DMSection />
     </nav>
   )
 }

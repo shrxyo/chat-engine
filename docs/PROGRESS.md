@@ -13,7 +13,7 @@
 | ----------------------- | ---------- |
 | Last updated            | 2026-06-14 |
 | Active branch (default) | `main`     |
-| Stories DONE / total    | 8 / 39     |
+| Stories DONE / total    | 9 / 39     |
 | Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 2 (S3.1, S11.2) |
@@ -37,7 +37,7 @@
 | S2.1 | DONE        | HTTP API for channels, messages, users; cursor pagination; soft delete; pytest covers happy/401/403/validation. |
 | S2.2 | DONE        | Single-instance WebSocket gateway. ConnectionManager. Event types in `schemas/ws.py`. JWT auth before `ws.accept()`. structlog. Both `publish()` (Redis) and in-process broadcast (Epic 6 stub). |
 | S2.3 | DONE        | Three-panel Discord-style layout, WebSocketContext (reconnect + backoff), PresenceContext, useMessages (infinite query + WS updates + optimistic send), MessageList (react-virtual + infinite scroll + auto-scroll), Message, MessageInput, TypingIndicator, ChannelSidebar, MembersPanel. Vitest installed; 7 tests pass; lint + typecheck green. |
-| S2.4 | TODO        | Direct messages.                                                                       |
+| S2.4 | DONE        | Direct messages: POST/GET /api/dm (find-or-create), DMSection sidebar, ChannelHeader for DM, Send DM from members panel, DMs excluded from GET /api/channels. |
 
 ## EPIC 3 — Authentication
 
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-06-14` — S2.4 DONE: Direct messages. `POST /api/dm` find-or-create, `GET /api/dm` list with other_user. `DMSection` in sidebar. `ChannelHeader` shows other user for DMs. "Send DM" in members panel avatar menu. `GET /api/channels` excludes `is_dm=true`. Backend tests in `test_dm.py`.
 - `2026-06-14` — S1.4 ENHANCED: Full-stack Docker Compose. `backend/Dockerfile` (python:3.12-slim, multi-stage, uv, `docker-entrypoint.sh` runs Alembic then uvicorn --reload), `frontend/Dockerfile` (node:20-alpine, multi-stage, npm ci, next dev). `docker-compose.yml` extended with `backend` and `frontend` services, healthchecks, `depends_on: service_healthy`, source bind-mounts for hot reload. `frontend/next.config.ts` uses `BACKEND_URL` env var for server-side API rewrite.
 - `2026-06-14` — S3.1 PARTIAL: Created `frontend/src/auth.ts` (NextAuth v5 config, conditional GitHub/Google providers) and `frontend/src/app/api/auth/[...nextauth]/route.ts` (route handler). `frontend/src/types/next-auth.d.ts` adds `session.accessToken` type. Fixes `ClientFetchError` on every page load — session now returns null cleanly until OAuth is wired.
 - `2026-06-14` — S2.3 DONE: Full frontend chat UI. Three-panel layout, WS/Presence contexts, useMessages hook (infinite query + optimistic send), MessageList (react-virtual + day groups + infinite scroll + auto-scroll), MessageInput (auto-grow, emoji picker, send on Enter), TypingIndicator (animated dots), ChannelSidebar (active highlight, unread badge), MembersPanel (online/offline status). Vitest installed; 7 tests green; lint + typecheck pass.
