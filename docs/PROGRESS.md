@@ -16,7 +16,7 @@
 | Stories DONE / total    | 9 / 39     |
 | Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
-| Currently PARTIAL       | 2 (S3.1, S11.2) |
+| Currently PARTIAL       | 1 (S11.2) |
 
 ---
 
@@ -43,7 +43,7 @@
 
 | ID   | Status      | Notes                                                                |
 | ---- | ----------- | -------------------------------------------------------------------- |
-| S3.1 | PARTIAL     | `src/auth.ts` and `app/api/auth/[...nextauth]/route.ts` created — ClientFetchError fixed, session returns null cleanly. OAuth provider wiring (GitHub + Google) and backend `/api/auth/sync` JWT exchange remain TODO. |
+| S3.1 | DONE        | Auth.js v5 (GitHub + Google). JWT sessions. `signIn` callback upserts via `POST /api/auth/sync`. Backend JWT (`sub`, `email`, `name`) in `session.accessToken`. `middleware.ts` protects `/channels/*`. Sign-in page + sidebar sign-out. |
 | S3.2 | TODO        | Rate limiting + security headers.                                    |
 
 ## EPIC 4 — Real-time UX
@@ -134,7 +134,7 @@
 
 - `2026-06-14` — S2.4 DONE: Direct messages. `POST /api/dm` find-or-create, `GET /api/dm` list with other_user. `DMSection` in sidebar. `ChannelHeader` shows other user for DMs. "Send DM" in members panel avatar menu. `GET /api/channels` excludes `is_dm=true`. Backend tests in `test_dm.py`.
 - `2026-06-14` — S1.4 ENHANCED: Full-stack Docker Compose. `backend/Dockerfile` (python:3.12-slim, multi-stage, uv, `docker-entrypoint.sh` runs Alembic then uvicorn --reload), `frontend/Dockerfile` (node:20-alpine, multi-stage, npm ci, next dev). `docker-compose.yml` extended with `backend` and `frontend` services, healthchecks, `depends_on: service_healthy`, source bind-mounts for hot reload. `frontend/next.config.ts` uses `BACKEND_URL` env var for server-side API rewrite.
-- `2026-06-14` — S3.1 PARTIAL: Created `frontend/src/auth.ts` (NextAuth v5 config, conditional GitHub/Google providers) and `frontend/src/app/api/auth/[...nextauth]/route.ts` (route handler). `frontend/src/types/next-auth.d.ts` adds `session.accessToken` type. Fixes `ClientFetchError` on every page load — session now returns null cleanly until OAuth is wired.
+- `2026-06-14` — S3.1 DONE: OAuth auth (GitHub + Google). Backend `POST /api/auth/sync` upserts user, returns `{user_id, access_token}`. NextAuth `signIn`/`jwt`/`session` callbacks wire backend JWT. `middleware.ts` guards `/channels/*`. Sign-in page with provider buttons. `SidebarFooter` sign-out menu.
 - `2026-06-14` — S2.3 DONE: Full frontend chat UI. Three-panel layout, WS/Presence contexts, useMessages hook (infinite query + optimistic send), MessageList (react-virtual + day groups + infinite scroll + auto-scroll), MessageInput (auto-grow, emoji picker, send on Enter), TypingIndicator (animated dots), ChannelSidebar (active highlight, unread badge), MembersPanel (online/offline status). Vitest installed; 7 tests green; lint + typecheck pass.
 - `2026-05-22` — Agent governance bootstrap: AGENTS.md (root + submodules), `.cursor/rules/*`, `.cursorignore`, `docs/{BACKLOG,PROGRESS,ARCHITECTURE,OPERATIONS,CONVENTIONS}.md`, `.env.example`, `CONTRIBUTING.md`.
 - `2026-05-22` — Backend Phase 1–2 already implemented (HTTP API + WS gateway + tests).

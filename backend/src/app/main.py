@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import get_session
+from app.routers.auth import router as auth_router
 from app.routers.channels import router as channels_router
 from app.routers.dm import router as dm_router
 from app.routers.messages import router as messages_router
@@ -50,6 +51,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.include_router(auth_router, prefix="/api")
     app.include_router(channels_router, prefix="/api")
     app.include_router(dm_router, prefix="/api")
     app.include_router(messages_router, prefix="/api")
