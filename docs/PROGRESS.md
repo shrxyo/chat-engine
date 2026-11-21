@@ -69,7 +69,7 @@
 
 | ID   | Status | Notes |
 | ---- | ------ | ----- |
-| S6.1 | TODO   | Pub/Sub fanout. `pubsub.publish()` exists; no subscriber loop. ConnectionManager still local-only. |
+| S6.1 | IN_PROGRESS | Pub/Sub fanout (branch `feat/S6.1-pubsub-fanout`). `pubsub.publish()` exists; no subscriber loop. ConnectionManager still local-only. |
 | S6.2 | TODO   | Go gateway (optional). |
 | S6.3 | TODO   | Load balancing. |
 | S6.4 | TODO   | k6 load tests. |
@@ -132,6 +132,8 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — Sprint T0 done: local folder wired to origin @ `c0e7380`; baseline 59 tests green, lint clean, 100 pre-existing pyright errors (see `docs/SPRINT.md` T0).
+- `2026-11-21` — Sprint plan created in `docs/SPRINT.md` (S6.1, S6.5, S6.3, S7.3, S6.4, S7.2, then S4.2, S4.3, S12.1). Read it after this file.
 - `2026-06-14` — S2.4 DONE: Direct messages. `POST /api/dm` find-or-create, `GET /api/dm` list with other_user. `DMSection` in sidebar. `ChannelHeader` shows other user for DMs. "Send DM" in members panel avatar menu. `GET /api/channels` excludes `is_dm=true`. Backend tests in `test_dm.py`.
 - `2026-06-14` — S1.4 ENHANCED: Full-stack Docker Compose. `backend/Dockerfile` (python:3.12-slim, multi-stage, uv, `docker-entrypoint.sh` runs Alembic then uvicorn --reload), `frontend/Dockerfile` (node:20-alpine, multi-stage, npm ci, next dev). `docker-compose.yml` extended with `backend` and `frontend` services, healthchecks, `depends_on: service_healthy`, source bind-mounts for hot reload. `frontend/next.config.ts` uses `BACKEND_URL` env var for server-side API rewrite.
 - `2026-06-14` — S3.1 DONE: OAuth auth (GitHub + Google). Backend `POST /api/auth/sync` upserts user, returns `{user_id, access_token}`. NextAuth `signIn`/`jwt`/`session` callbacks wire backend JWT. `middleware.ts` guards `/channels/*`. Sign-in page with provider buttons. `SidebarFooter` sign-out menu.
