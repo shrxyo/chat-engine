@@ -6,8 +6,10 @@ Each async test:
   1. Inserts fixture data via the async `db_session`.
   2. Monkeypatches `app.routers.ws.AsyncSessionLocal` → TestSessionLocal so
      the WS handler queries the same test database.
-  3. Mocks `app.routers.ws.publish` to a no-op (avoids Redis in CI).
-  4. Opens a sync TestClient and exercises the WebSocket.
+  3. Opens a sync TestClient and exercises the WebSocket.
+
+Delivery is real: events go through the app's RedisBus and come back from
+Redis (S6.1), so these tests need `docker compose up -d redis`.
 """
 
 import threading
@@ -39,10 +41,6 @@ from tests.factories import (
 # ---------------------------------------------------------------------------
 
 
-async def _noop_publish(channel_id: uuid.UUID, payload: dict[str, Any]) -> None:  # noqa: ARG001
-    pass
-
-
 def _make_app(monkeypatch: pytest.MonkeyPatch) -> Any:
     """
     Return a FastAPI app wired to the test database.
@@ -54,14 +52,12 @@ def _make_app(monkeypatch: pytest.MonkeyPatch) -> Any:
 
     Patches:
     - `app.routers.ws.AsyncSessionLocal` → fresh session factory pointing at chatdb_test
-    - `app.routers.ws.publish` → no-op coroutine
     """
     ws_engine = create_async_engine(TEST_DATABASE_URL, poolclass=NullPool, echo=False)
     WsSessionLocal = async_sessionmaker(
         ws_engine, class_=AsyncSession, expire_on_commit=False
     )
     monkeypatch.setattr(ws_module, "AsyncSessionLocal", WsSessionLocal)
-    monkeypatch.setattr(ws_module, "publish", _noop_publish)
 
     application = create_app()
 

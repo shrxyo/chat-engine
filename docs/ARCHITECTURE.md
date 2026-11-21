@@ -53,7 +53,7 @@ graph TB
   Browser -.errors.-> Sentry
 ```
 
-In the current single-instance state, "Gateway" and "API" are the same Python process. Epic 6 (`S6.1`) splits the WebSocket plane behind Redis Pub/Sub.
+"Gateway" and "API" are the same Python process, and any number of them can run side by side (`S6.1`). Each instance runs one `RedisBus` (`services/pubsub.py`): handlers only `publish()` to Redis topic `channel:{id}`, and each instance subscribes to a channel's topic while it holds at least one local socket in that channel, delivering what it receives to those sockets. The sender's own instance also delivers from Redis, so there is exactly one delivery path. If publishing fails, the event is delivered locally (single-instance degraded mode). Delivery is at-most-once (Pub/Sub); clients recover gaps with `S4.3`.
 
 ---
 

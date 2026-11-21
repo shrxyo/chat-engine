@@ -23,7 +23,7 @@
 | Task | Backlog ID | Status | Est. | Claims |
 |------|-----------|--------|------|--------|
 | T0 | — (setup) | DONE | 10m | — |
-| T1 | S6.1 | IN_PROGRESS | 2h | B1, B2 |
+| T1 | S6.1 | DONE | 2h | B1, B2 |
 | T2 | S6.5 (partial) | TODO | 45m | B1 |
 | T3 | S6.3 | TODO | 1h | B1 |
 | T4 | S7.3 | TODO | 1.5h | B2, B3 |
@@ -50,20 +50,18 @@
 
 Branch per story: `feat/<story-id>-<slug>`.
 
-## T1 — S6.1 Redis Pub/Sub fanout  · branch `feat/S6.1-pubsub-fanout`
+## T1 — S6.1 Redis Pub/Sub fanout  · branch `feat/S6.1-pubsub-fanout` · DONE
 
-Current state: `services/pubsub.py:publish()` publishes to `channel:{id}`; nothing subscribes. `ConnectionManager` is in-process only. Every handler in `routers/ws.py` calls `publish()` **and** `manager.broadcast_to_channel()`.
-
-- [ ] Tests first (`tests/test_pubsub_fanout.py`): two `ConnectionManager` instances sharing one Redis → message published via A is delivered to a socket registered on B; no duplicate delivery on A
-- [ ] `ConnectionManager`: subscribe to `channel:{id}` on first local socket, unsubscribe on last; refcount per channel
-- [ ] Background listener task started/stopped in `main.py` `lifespan`; dispatches Redis messages to local sockets
-- [ ] Remove every direct `manager.broadcast_to_channel(...)` that follows `publish(...)` in `routers/ws.py` (presence join/leave, message new/edit/delete, reaction, typing)
-- [ ] Carry `exclude_user_id` inside the published envelope (typing + presence.join need it)
-- [ ] Parallel fanout: `asyncio.gather` with per-send timeout; drop/disconnect sockets that fail
-- [ ] Existing `tests/test_ws.py` still passes (may need Redis fixture or fake)
-- [ ] Manual: `docker compose up --scale backend=2`, client on each instance sees the other's messages
-
-Gotchas: Redis pub/sub connection must be separate from the publish client. Handle listener reconnect if Redis drops.
+- [x] Tests first: `tests/test_pubsub_fanout.py` (8 tests, real Redis): cross-instance delivery, exactly-once on the sender's instance, `exclude_user_id` across instances, unsubscribe on last local socket (checked with `PUBSUB NUMSUB`), replaced socket not dropped, slow socket evicted, Redis-down local fallback, resubscribe after Redis kills the connection
+- [x] `RedisBus` in `services/pubsub.py`: publish client + separate PubSub connection; subscribe waits for Redis confirmation; tracks wanted topics itself (redis-py forgets a SUBSCRIBE that failed while Redis was down); listener reconnects with backoff
+- [x] `ConnectionManager`: async `connect`/`disconnect` drive subscribe/unsubscribe; `disconnect(..., ws)` only removes that exact socket; parallel fanout with per-send timeout (2s), stalled sockets evicted and closed with 1013
+- [x] `main.py` lifespan starts/stops the bus
+- [x] `routers/ws.py`: all 4 duplicate local broadcasts removed; 7 publish sites; typing + presence.join use `exclude_user_id`
+- [x] `tests/test_ws.py`: publish mock removed, so WS tests make a real Redis round trip
+- [x] Manual: two uvicorn processes (:8001, :8002). presence.join and message.new cross instances both ways; sender's echo exactly once; 3/3 runs. Script: scratchpad `cross_instance_check.py` (not committed). `docker compose --scale` deferred to T3 (needs nginx; backend host port collides).
+- Results: 67 tests pass. Lint clean. Pyright 100 → 91 (0 in new code).
+- **Observed:** ~70–80ms per cross-instance message on localhost. High for local; suspect `NullPool` opening a new Postgres connection per insert. Verify in T2/T4.
+- Not covered: defensive branches (malformed envelope, deliver raising). Known pre-existing limit: one socket per (user, channel) on an instance, so a second tab replaces the first.
 
 ## T2 — S6.5 (partial) DB pool + indexes · branch `feat/S6.5-db-pool-indexes`
 
@@ -140,5 +138,6 @@ Gotchas: Redis pub/sub connection must be separate from the publish client. Hand
 
 ## Log (newest first)
 
+- `2026-11-21` — T1 DONE (S6.1). Cross-instance fanout via Redis verified with 2 processes. 67 tests green.
 - `2026-11-21` — T0 DONE. Repo wired to origin, baseline: 59 tests pass, lint clean, 100 pre-existing pyright errors.
 - `2026-11-21` — Sprint file created. All tasks TODO.

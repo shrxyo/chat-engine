@@ -43,7 +43,7 @@ All `make` targets must be run from `backend/`.
 - Services are **pure async functions** taking `AsyncSession` and primitives. No global state except the connection manager.
 - One `WebSocket` event handler per type in `routers/ws.py`. Add new types in `schemas/ws.py` `WSMessageType` enum.
 - All writes happen inside `async with AsyncSessionLocal()` blocks or via the `SessionDep`. Never share sessions across requests.
-- Broadcasts go through both `publish()` (Redis) and `manager.broadcast_to_channel()` until Epic 6 lands; the Redis listener is no-op until then.
+- Broadcasts go through `publish()` **only** (S6.1). Never call `manager.broadcast_to_channel()` from a handler: every instance, including the sender's, delivers from the Redis topic via its `RedisBus`, so a direct local send causes duplicates. Use `publish(..., exclude_user_id=...)` to skip the sender.
 - Soft delete (`deleted_at`) only — never `DELETE FROM`. Filter `deleted_at IS NULL` in reads.
 - Auth on WebSocket: token via `?token=` query param. Validate before `ws.accept()`.
 

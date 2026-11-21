@@ -11,9 +11,9 @@
 
 | Metric                  | Value      |
 | ----------------------- | ---------- |
-| Last updated            | 2026-06-14 |
+| Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
-| Stories DONE / total    | 9 / 39     |
+| Stories DONE / total    | 10 / 39    |
 | Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 1 (S11.2) |
@@ -69,7 +69,7 @@
 
 | ID   | Status | Notes |
 | ---- | ------ | ----- |
-| S6.1 | IN_PROGRESS | Pub/Sub fanout (branch `feat/S6.1-pubsub-fanout`). `pubsub.publish()` exists; no subscriber loop. ConnectionManager still local-only. |
+| S6.1 | DONE | `RedisBus` fanout: per-instance subscribe/unsubscribe by local refcount, publish-only handlers, parallel send with slow-consumer eviction, reconnect + resubscribe. Verified across 2 processes. |
 | S6.2 | TODO   | Go gateway (optional). |
 | S6.3 | TODO   | Load balancing. |
 | S6.4 | TODO   | k6 load tests. |
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S6.1 DONE: Redis Pub/Sub fanout. `services/pubsub.py:RedisBus`, async `ConnectionManager.connect/disconnect`, handlers publish only. `tests/test_pubsub_fanout.py` (8). WS tests now use real Redis.
 - `2026-11-21` — Sprint T0 done: local folder wired to origin @ `c0e7380`; baseline 59 tests green, lint clean, 100 pre-existing pyright errors (see `docs/SPRINT.md` T0).
 - `2026-11-21` — Sprint plan created in `docs/SPRINT.md` (S6.1, S6.5, S6.3, S7.3, S6.4, S7.2, then S4.2, S4.3, S12.1). Read it after this file.
 - `2026-06-14` — S2.4 DONE: Direct messages. `POST /api/dm` find-or-create, `GET /api/dm` list with other_user. `DMSection` in sidebar. `ChannelHeader` shows other user for DMs. "Send DM" in members panel avatar menu. `GET /api/channels` excludes `is_dm=true`. Backend tests in `test_dm.py`.

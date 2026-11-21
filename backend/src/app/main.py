@@ -18,6 +18,8 @@ from app.routers.dm import router as dm_router
 from app.routers.messages import router as messages_router
 from app.routers.users import router as users_router
 from app.routers.ws import router as ws_router
+from app.services.connection_manager import manager
+from app.services.pubsub import RedisBus, set_bus
 
 logger = structlog.get_logger(__name__)
 
@@ -27,9 +29,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = get_settings()
     logger.info("starting up", environment=settings.ENVIRONMENT)
 
-    yield
-
-    logger.info("shutdown complete")
+    # S6.1: cross-instance fanout. Every instance delivers to its own sockets
+    # from the Redis topic, including events it published itself.
+    bus = RedisBus(settings.REDIS_URL, deliver=manager.broadcast_to_channel)
+    await bus.start()
+    set_bus(bus)
+    manager.attach_subscriber(bus)
+    try:
+        yield
+    finally:
+        manager.attach_subscriber(None)
+        set_bus(None)
+        await bus.stop()
+        logger.info("shutdown complete")
 
 
 def create_app() -> FastAPI:

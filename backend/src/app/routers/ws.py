@@ -81,7 +81,7 @@ async def websocket_endpoint(
 
     # --- Accept & register connection ---
     await ws.accept()
-    manager.connect(user.id, channel_id, ws)
+    await manager.connect(user.id, channel_id, ws)
 
     log = logger.bind(user_id=str(user.id), channel_id=str(channel_id))
 
@@ -89,10 +89,7 @@ async def websocket_endpoint(
         "type": WSMessageType.presence_join,
         "payload": {"user_id": str(user.id), "channel_id": str(channel_id)},
     }
-    await publish(channel_id, join_payload)
-    await manager.broadcast_to_channel(
-        channel_id, join_payload, exclude_user_id=user.id
-    )
+    await publish(channel_id, join_payload, exclude_user_id=user.id)
     log.info("ws_presence_join", event_type=WSMessageType.presence_join)
 
     # --- Receive loop ---
@@ -145,13 +142,12 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         pass
     finally:
-        manager.disconnect(user.id, channel_id)
+        await manager.disconnect(user.id, channel_id, ws)
         leave_payload: dict[str, Any] = {
             "type": WSMessageType.presence_leave,
             "payload": {"user_id": str(user.id), "channel_id": str(channel_id)},
         }
         await publish(channel_id, leave_payload)
-        await manager.broadcast_to_channel(channel_id, leave_payload)
         log.info("ws_presence_leave", event_type=WSMessageType.presence_leave)
 
 
@@ -220,7 +216,6 @@ async def _handle_message_new(
         "payload": msg_response.model_dump(mode="json"),
     }
     await publish(channel_id, broadcast)
-    await manager.broadcast_to_channel(channel_id, broadcast)
 
     log.info("ws_message_new", message_id=str(message.id))
     logger.info("embedding job enqueued", message_id=str(message.id))
@@ -274,7 +269,6 @@ async def _handle_message_edit(
         "payload": msg_response.model_dump(mode="json"),
     }
     await publish(channel_id, broadcast)
-    await manager.broadcast_to_channel(channel_id, broadcast)
     log.info("ws_message_edit", message_id=str(payload.message_id))
 
 
@@ -323,7 +317,6 @@ async def _handle_message_delete(
         "payload": {"message_id": str(payload.message_id)},
     }
     await publish(channel_id, broadcast)
-    await manager.broadcast_to_channel(channel_id, broadcast)
     log.info("ws_message_delete", message_id=str(payload.message_id))
 
 
@@ -383,7 +376,6 @@ async def _handle_message_reaction(
         },
     }
     await publish(channel_id, broadcast)
-    await manager.broadcast_to_channel(channel_id, broadcast)
     log.info("ws_message_reaction", message_id=str(payload.message_id))
 
 
@@ -397,6 +389,5 @@ async def _handle_typing(
         "type": msg_type,
         "payload": {"user_id": str(user.id), "channel_id": str(channel_id)},
     }
-    await publish(channel_id, broadcast)
-    await manager.broadcast_to_channel(channel_id, broadcast, exclude_user_id=user.id)
+    await publish(channel_id, broadcast, exclude_user_id=user.id)
     log.info("ws_typing")
