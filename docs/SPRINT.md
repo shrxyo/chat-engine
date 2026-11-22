@@ -25,7 +25,7 @@
 | T0 | — (setup) | DONE | 10m | — |
 | T1 | S6.1 | DONE | 2h | B1, B2 |
 | T2 | S6.5 (partial) | DONE | 45m | B1 |
-| T3 | S6.3 | TODO | 1h | B1 |
+| T3 | S6.3 | IN_PROGRESS | 1h | B1 |
 | T4 | S7.3 | TODO | 1.5h | B2, B3 |
 | T5 | S6.4 | TODO | 1.5h | B1, B2 |
 | T6 | S7.2 | TODO | 1.5h | B3 |
@@ -75,7 +75,7 @@ Branch per story: `feat/<story-id>-<slug>`.
 - **Measured** (scratchpad `pool_bench.py`, 200 iterations, open session + `SELECT 1` + commit, localhost): NullPool p50 34.3ms / p99 283ms → pooled p50 2.5ms / p99 65ms. This accounts for most of T1's ~70–80ms per message. `echo=True` in development adds ~1.7ms p50; T5 should run with `ENVIRONMENT` ≠ development.
 - **Found, not fixed (pre-existing, out of scope):** message pagination orders and cursors by `Message.id`, which is a random `uuid4`. So "newest 50" is not newest-by-time and `before=` cursors skip/repeat messages. Matters for T8 (`after=` gap fill). Fix needs a time-ordered key (UUIDv7 or `(created_at, id)` cursor); would need its own index then.
 
-## T3 — S6.3 Load balancing · branch `feat/S6.3-nginx-lb`
+## T3 — S6.3 Load balancing · branch `feat/S6.3-nginx-lb` · IN_PROGRESS
 
 - [ ] `infra/nginx/nginx.conf`: upstream round-robin to `backend:8000`, WebSocket upgrade headers (`Upgrade`, `Connection`), long `proxy_read_timeout`
 - [ ] `docker-compose.yml`: `nginx` service on `:8000`; remove host port mapping from `backend` so it can scale

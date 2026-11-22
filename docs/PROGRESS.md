@@ -14,7 +14,7 @@
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
 | Stories DONE / total    | 10 / 39    |
-| Currently IN_PROGRESS   | 0          |
+| Currently IN_PROGRESS   | 1 (S6.3)   |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 2 (S6.5, S11.2) |
 
@@ -71,7 +71,7 @@
 | ---- | ------ | ----- |
 | S6.1 | DONE | `RedisBus` fanout: per-instance subscribe/unsubscribe by local refcount, publish-only handlers, parallel send with slow-consumer eviction, reconnect + resubscribe. Verified across 2 processes. |
 | S6.2 | TODO   | Go gateway (optional). |
-| S6.3 | TODO   | Load balancing. |
+| S6.3 | IN_PROGRESS | [claude] 2026-11-21 — nginx LB in compose (T3). |
 | S6.4 | TODO   | k6 load tests. |
 | S6.5 | PARTIAL | Pool + indexes DONE (T2): QueuePool 5+15, pre_ping; partial `ix_messages_channel_id_id_live (channel_id, id) WHERE deleted_at IS NULL`; `ix_channel_memberships_channel_id`. Read replica + Redis cache TODO. |
 
