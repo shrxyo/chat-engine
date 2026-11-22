@@ -1,0 +1,53 @@
+# S6.4 — overlay for load tests. Use with the main file:
+#   docker compose -f docker-compose.yml -f infra/load-tests/compose.loadtest.yml ...
+# (`make load-test` does this.)
+#
+# Backend: no --reload watcher and no SQL echo (ENVIRONMENT=development turns on
+# `echo=True`, which T2 measured at ~1.7ms p50 per round trip). Everything else
+# matches the dev stack.
+#
+# Logs go to a file inside each backend container (`/tmp/app.log`), not to
+# Docker's stdout pipe. structlog writes synchronously from the event loop, and
+# on Docker Desktop for Mac that pipe blocks under load: at 200 VUs it froze
+# every replica's loop (DB commits and Redis delivery stalled for seconds; at
+# 500 VUs the DB pool timed out and fanout lagged by minutes). Same load with
+# file logging: msg_rtt p95 1.21s -> 33ms, 35 -> 0 lost. Read logs with
+#   docker compose exec backend tail -f /tmp/app.log
+# Fixing the logger itself (level filtering, non-blocking output) is S7.1.
+services:
+  backend:
+    environment:
+      RELOAD: "false"
+      ENVIRONMENT: staging
+    # Migrations already ran in `migrate`; skip docker-entrypoint.sh.
+    entrypoint:
+      - sh
+      - -c
+      - exec uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/app.log 2>&1
+
+  # k6 runs inside the compose network and hits nginx directly, so Docker
+  # Desktop's host port forwarding is not in the measured path.
+  k6:
+    image: grafana/k6:1.3.0
+    profiles: [loadtest]
+    environment:
+      WS_URL: ws://nginx:8080
+      K6_WEB_DASHBOARD: "true"
+      K6_WEB_DASHBOARD_EXPORT: /out/report.html
+      K6_WEB_DASHBOARD_PERIOD: 5s
+      VUS: ${VUS:-100}
+      RAMP: ${RAMP:-1m}
+      HOLD: ${HOLD:-3m}
+      SEND_INTERVAL_S: ${SEND_INTERVAL_S:-5}
+      SESSION_S: ${SESSION_S:-120}
+    volumes:
+      # Paths are relative to the project dir (the first -f file), not this file.
+      - ./infra/load-tests:/scripts:ro
+      - ./docs/benchmarks/${RUN_NAME:-latest}:/out
+    working_dir: /scripts
+    depends_on:
+      nginx:
+        condition: service_healthy
+    # One-shot: no long-running process to health-check.
+    healthcheck:
+      disable: true

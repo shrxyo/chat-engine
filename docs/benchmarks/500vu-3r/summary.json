@@ -1,0 +1,104 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {}
+    },
+    "metrics": {
+        "vus": {
+            "value": 3,
+            "min": 3,
+            "max": 500
+        },
+        "msg_echoed": {
+            "rate": 71.3713843879477,
+            "count": 15346
+        },
+        "ws_msgs_sent": {
+            "count": 17270,
+            "rate": 80.31954961422238
+        },
+        "data_sent": {
+            "count": 1380732,
+            "rate": 6421.527062996207
+        },
+        "ws_sessions": {
+            "count": 500,
+            "rate": 2.325406763584898
+        },
+        "ws_connecting": {
+            "p(90)": 5330.7224648,
+            "p(95)": 6240.468527999999,
+            "p(99)": 8037.463196169998,
+            "max": 8826.079921,
+            "count": 500,
+            "avg": 1453.350734632001,
+            "min": 3.320125,
+            "med": 38.27125,
+            "thresholds": {
+                "p(95)<500": true
+            }
+        },
+        "msg_lost": {
+            "count": 1918,
+            "rate": 8.92026034511167,
+            "thresholds": {
+                "count<1": true
+            }
+        },
+        "msg_sent": {
+            "count": 17270,
+            "rate": 80.31954961422238
+        },
+        "msg_received_others": {
+            "count": 154988,
+            "rate": 720.8202869489924
+        },
+        "msg_rtt": {
+            "avg": 482.02867196663624,
+            "min": 2,
+            "med": 19,
+            "p(90)": 1418.0000000000007,
+            "p(95)": 3415.4999999999986,
+            "p(99)": 4842,
+            "max": 9597,
+            "count": 15346,
+            "thresholds": {
+                "p(99)<100": true
+            }
+        },
+        "data_received": {
+            "count": 54301827,
+            "rate": 252547.67156163408
+        },
+        "ws_msgs_received": {
+            "count": 177228,
+            "rate": 824.2543797932486
+        },
+        "msg_fanout_latency": {
+            "p(99)": 14154.259999999997,
+            "max": 22163,
+            "count": 154988,
+            "avg": 1383.3325289699849,
+            "min": 2,
+            "med": 75,
+            "p(90)": 5403.300000000004,
+            "p(95)": 8769
+        },
+        "ws_connect_ok": {
+            "passes": 500,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "vus_max": {
+            "value": 500,
+            "min": 500,
+            "max": 500
+        }
+    }
+}

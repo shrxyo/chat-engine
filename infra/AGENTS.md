@@ -34,7 +34,7 @@ infra/
 | Stop all                            | `docker compose down`                                  |
 | Stop and remove volumes             | `docker compose down -v`                               |
 | Rebuild images after code change    | `docker compose build`                                 |
-| Load test                           | `k6 run infra/load-tests/websocket_flood.js`           |
+| Load test                           | `make load-test VUS=200` (k6 in Docker; see `infra/load-tests/compose.loadtest.yml`) |
 
 ## Architectural constraints
 

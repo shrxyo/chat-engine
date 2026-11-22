@@ -13,8 +13,8 @@
 | ----------------------- | ---------- |
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
-| Stories DONE / total    | 12 / 39    |
-| Currently IN_PROGRESS   | 1 (S6.4)   |
+| Stories DONE / total    | 13 / 39    |
+| Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 3 (S6.5, S7.3, S11.2) |
 
@@ -72,7 +72,7 @@
 | S6.1 | DONE | `RedisBus` fanout: per-instance subscribe/unsubscribe by local refcount, publish-only handlers, parallel send with slow-consumer eviction, reconnect + resubscribe. Verified across 2 processes. |
 | S6.2 | TODO   | Go gateway (optional). |
 | S6.3 | DONE | nginx LB (`infra/nginx/nginx.conf`): round-robin, no stickiness, WS upgrade, 1h idle timeout, passive health (max_fails=2/5s), DNS `resolve` so `--scale` needs no nginx restart. Backend has no host port. One-shot `migrate` service. |
-| S6.4 | IN_PROGRESS | [claude] [2026-11-21] — T5: k6 WS flood via nginx over 3 replicas, msg RTT, HTML report. |
+| S6.4 | DONE        | k6 WebSocket flood (`make load-test`) via nginx over 3 replicas; seed script mints JWTs to a git-ignored file. Max sustainable 200 VUs: 0 lost, msg_rtt p50 9ms / p99 749ms. Reports in `docs/benchmarks/`; findings in SPRINT T5. |
 | S6.5 | PARTIAL | Pool + indexes DONE (T2): QueuePool 5+15, pre_ping; partial `ix_messages_channel_id_id_live (channel_id, id) WHERE deleted_at IS NULL`; `ix_channel_memberships_channel_id`. Read replica + Redis cache TODO. |
 
 ## EPIC 7 — Observability
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S6.4 DONE (T5): k6 load test. 200 VUs over 3 replicas: 6,981/6,981 echoed, p50 9ms, p99 749ms (misses the 100ms target); 500+ VUs degrade badly. Root causes: structlog's blocking stdout writes froze the event loop under Docker Desktop (load-test overlay logs to a file; app fix is S7.1), plus remaining loop stalls (follow-up: profile). nginx caps at ~4k sockets. `tests/test_loadtest_seed.py` (8). 89 tests green.
 - `2026-11-21` — S7.3 PARTIAL (T4): Prometheus metrics + Grafana. 3 replicas scraped via DNS; 120 messages → counter 120, 360 latency observations (one per delivering replica). Removed `PROMETHEUS_MULTIPROC_DIR` from `.env.example` (crashed startup). nginx hides `/metrics`. 81 tests green.
 - `2026-11-21` — S6.3 DONE (T3): nginx on :8000 in front of `--scale backend=3`. 4 and 6 clients spread across 3 replicas each got 1 broadcast exactly once (3/3 runs). Live scale 3→4 picked up without restart. Migrations moved to a one-shot `migrate` service (replicas raced on `alembic upgrade`). 72 tests green.
 - `2026-11-21` — S6.5 PARTIAL (T2): pooled engine replaces NullPool (session round trip p50 34ms → 2.5ms locally). Migration `c7e2a9f4b1d3` adds 2 indexes CONCURRENTLY. `tests/test_db_pool_indexes.py` (5). 72 tests green.

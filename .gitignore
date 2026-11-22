@@ -75,3 +75,6 @@ EPIC2_CONTEXT.md
 NOTES.md
 .cursor/sessions/
 
+
+# k6 load-test credentials (S6.4): minted JWTs, never commit
+infra/load-tests/.data/

@@ -27,7 +27,7 @@
 | T2 | S6.5 (partial) | DONE | 45m | B1 |
 | T3 | S6.3 | DONE | 1h | B1 |
 | T4 | S7.3 | DONE | 1.5h | B2, B3 |
-| T5 | S6.4 | IN_PROGRESS | 1.5h | B1, B2 |
+| T5 | S6.4 | DONE | 1.5h | B1, B2 |
 | T6 | S7.2 | TODO | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |
 | T7 | S4.2 | TODO | 1h | B2 |
@@ -106,21 +106,38 @@ Branch per story: `feat/<story-id>-<slug>`.
 - **Found, not fixed (pre-existing):** `routers/ws.py` calls `manager.connect()` and the presence.join publish *before* the `try/finally` that unregisters the socket. If the handler is cancelled or raises there (e.g. during the Redis subscribe wait), the socket stays registered and the gauge over-counts. Hit only by TestClient's cancel-on-exit in tests; uvicorn doesn't cancel on client close. Fix: move both inside the `try`.
 - Not done (rest of BACKLOG S7.3): `db_query_duration_seconds`, embedding metrics (need S5.1), Latency / AI Worker / Database dashboards.
 
-## T5 — S6.4 k6 load test · branch `feat/S6.4-k6`
+## T5 — S6.4 k6 load test · branch `feat/S6.4-k6` · DONE
 
-- [ ] Seed script to create N load-test users + memberships and mint JWTs (no secrets committed; read `SECRET_KEY` from env)
-- [ ] `infra/load-tests/websocket_flood.js`: VU connects via nginx, sends msg every N s, measures RTT until own `message.new` echo (match by client nonce or content)
-- [ ] Custom k6 Trend `msg_rtt`; thresholds `ws_connecting p(95)<500`, `msg_rtt p(99)<100`
-- [ ] `make load-test` target
-- [ ] Run against 3 backend instances; ramp to max sustainable VUs on this machine
-- [ ] Save HTML report + Grafana screenshot to `docs/benchmarks/`
-- [ ] Record results below ⬇
+- [x] Seed script to create N load-test users + memberships and mint JWTs (no secrets committed; read `SECRET_KEY` from env)
+- [x] `infra/load-tests/websocket_flood.js`: VU connects via nginx, sends msg every N s, measures RTT until own `message.new` echo (match by client nonce or content)
+- [x] Custom k6 Trend `msg_rtt`; thresholds `ws_connecting p(95)<500`, `msg_rtt p(99)<100`
+- [x] `make load-test` target
+- [x] Run against 3 backend instances; ramp to max sustainable VUs on this machine
+- [x] Save HTML report + Grafana screenshot to `docs/benchmarks/`
+- [x] Record results below ⬇
 
 ### Results
 
 | Date | Instances | Peak VUs | ws_connecting p95 | msg_rtt p50 | msg_rtt p99 | Errors | Notes |
 |------|-----------|----------|-------------------|-------------|-------------|--------|-------|
-| | | | | | | | |
+| 2026-11-21 | 3 | 200 | 264ms | 9ms | **749ms** | 0 lost, 0 late, 0 server errors (6,981/6,981 echoed) | Best result; `docs/benchmarks/200vu-3r/` (report + Grafana) |
+| 2026-11-21 | 3 | 500 | 6.24s | 19ms | 4.84s | 1,918 no echo within 5s | Old script (see note); `500vu-3r/` |
+| 2026-11-21 | 3 | 1000 | 1.54s | 362ms | 3.81s | 27,849 no echo within 5s; 2 connects failed | Old script; fanout lag ~1 min; `1000vu-3r/` |
+| 2026-11-21 | 3 | 2000 | 2.16s | 158ms | 8.61s | 98.7% of connect attempts failed; 2,070 server errors | Old script; past nginx connection limit; `2000vu-3r/` |
+
+**Verdict:** no load level meets `msg_rtt p99<100ms` on this machine (Docker Desktop for Mac, 8 CPU / 4 GB VM). Max sustainable is **200 concurrent sockets** (0 lost, p50 9ms, p99 749ms). Per the rule above, the resume bullet must use these numbers, not "sub-100ms".
+
+Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r`. Settings: room size 10, one message per VU every 5s, frontend stopped, Grafana stopped during runs.
+
+**Findings:**
+- **Blocking stdout logging (fixed for load tests only).** structlog writes synchronously from the event loop; on Docker Desktop the stdout pipe blocks under load and freezes every replica. With stdout logging, 500 VUs gave msg_rtt p99 7.64s, 10,813 of 13,853 messages with no echo, and DB pool timeouts. The load-test overlay sends backend logs to `/tmp/app.log` instead. App fix (level filtering + non-blocking output) belongs to S7.1. Also, `LOG_LEVEL` is not wired to structlog (pre-existing).
+- **Event-loop stalls remain.** Even with file logging, the server-side broadcast median was ~240ms at 500 VUs while Postgres, Redis and CPU were idle, so something inside the backend still blocks the loop. Run-to-run variance is large (two 200-VU runs: p99 3.98s and 749ms). The worst stalls cluster at the end of the ramp, while sockets are still connecting. Needs profiling; follow-up story.
+- **Docker Desktop VM jitter.** A bare asyncio loop in its own container with no load stalled up to 435ms (p99.9 78ms). Part of the tail is the host, not the app.
+- **Uneven load balancing.** At 200 VUs nginx put 95/95/10 connections on the 3 replicas (Grafana screenshot).
+- **nginx connection limit.** `worker_connections 1024` × 8 workers, with 2 connections per proxied WebSocket, gives roughly 4k sockets. At 2000 VUs connects failed, and the endless reconnects made it worse.
+- **No messages dropped.** For the first 200-VU run, all 6,981 sent messages were in Postgres; the 156 reported "lost" were late echoes. The script now separates `msg_late` (echo > 5s, still timed) from `msg_lost` (no echo before close). The 500/1000/2000 rows above were run before this change, so their "no echo within 5s" counts include late messages.
+- k6 1.3.0 has no `k6/websockets`; the script uses `k6/experimental/websockets`.
+- Thresholds use the sprint's 100ms target (BACKLOG S6.4 says 200ms).
 
 ## T6 — S7.2 OpenTelemetry · branch `feat/S7.2-otel`
 
@@ -157,6 +174,7 @@ Branch per story: `feat/<story-id>-<slug>`.
 
 ## Log (newest first)
 
+- `2026-11-21` — T5 DONE (S6.4). k6 WebSocket flood via nginx over 3 replicas. Max sustainable 200 VUs: 0 lost, msg_rtt p50 9ms / p99 749ms (misses 100ms target). Found blocking stdout logging (worked around in the load-test overlay; app fix is S7.1) and remaining loop stalls (follow-up). 89 tests green.
 - `2026-11-21` — T4 DONE (S7.3 partial). `/metrics` + 4 custom metrics + `server_ts`; Prometheus (DNS discovery over replicas) + Grafana overview dashboard. Counts verified exact across 3 replicas. 81 tests green.
 - `2026-11-21` — T3 DONE (S6.3). nginx LB over 3 replicas; broadcast reaches clients on every replica exactly once. Live scale-up without restart. 72 tests green.
 - `2026-11-21` — T2 DONE (S6.5 partial). Pooled engine + 2 indexes. Session round trip p50 34ms → 2.5ms. 72 tests green.

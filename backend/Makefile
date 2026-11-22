@@ -1,4 +1,4 @@
-.PHONY: install run worker test lint format typecheck migrate migration seed
+.PHONY: install run worker test lint format typecheck migrate migration seed loadtest-seed
 
 install:
 	uv sync
@@ -34,3 +34,9 @@ migration:
 
 seed:
 	PYTHONPATH=src uv run python scripts/seed.py
+
+# S6.4: load-test users + JWTs -> infra/load-tests/.data/tokens.json (git-ignored)
+USERS ?= 100
+ROOM_SIZE ?= 10
+loadtest-seed:
+	uv run python scripts/loadtest_seed.py --users $(USERS) --room-size $(ROOM_SIZE)
