@@ -234,7 +234,7 @@ npx shadcn@latest add <component>      # only way to add UI primitives
 
 ```bash
 docker compose up -d                              # base services
-docker compose --profile observability up -d      # + Prometheus/Grafana/OTel/Jaeger
+docker compose --profile observability up -d      # + Prometheus :9090, Grafana :3001 (OTel/Jaeger: S7.2)
 docker compose up --scale backend=3               # multi-instance test (after S6.1)
 docker compose down -v                            # nuke everything
 k6 run infra/load-tests/websocket_flood.js        # post-S6.4

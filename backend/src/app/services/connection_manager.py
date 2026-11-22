@@ -6,6 +6,8 @@ from typing import Any, Protocol
 import structlog
 from fastapi import WebSocket
 
+from app.metrics import WS_ACTIVE_CONNECTIONS, observe_broadcast_latency
+
 logger = structlog.get_logger(__name__)
 
 # 1013 "Try Again Later": tells the client to reconnect (and gap-fill).
@@ -41,6 +43,9 @@ class ConnectionManager:
 
     def local_connection_count(self, channel_id: uuid.UUID) -> int:
         return len(self._connections.get(channel_id, {}))
+
+    def total_connection_count(self) -> int:
+        return sum(len(conns) for conns in self._connections.values())
 
     async def connect(
         self,
@@ -98,6 +103,7 @@ class ConnectionManager:
         await asyncio.gather(
             *(self._send(uid, channel_id, ws, payload) for uid, ws in targets)
         )
+        observe_broadcast_latency(payload)
 
     async def _send(
         self,
@@ -126,3 +132,4 @@ class ConnectionManager:
 
 # Module-level singleton — import this everywhere, never instantiate per-request.
 manager = ConnectionManager()
+WS_ACTIVE_CONNECTIONS.set_function(manager.total_connection_count)

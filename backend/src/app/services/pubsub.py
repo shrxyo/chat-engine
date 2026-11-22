@@ -23,6 +23,8 @@ import structlog
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 
+from app.metrics import REDIS_PUBSUB_PUBLISH_TOTAL
+
 logger = structlog.get_logger(__name__)
 
 Deliver = Callable[[uuid.UUID, dict[str, Any], uuid.UUID | None], Awaitable[None]]
@@ -110,7 +112,9 @@ class RedisBus:
             await self._redis.publish(  # pyright: ignore[reportUnknownMemberType]
                 topic_for(channel_id), json.dumps(envelope, default=str)
             )
+            REDIS_PUBSUB_PUBLISH_TOTAL.labels(result="ok").inc()
         except _REDIS_ERRORS as exc:
+            REDIS_PUBSUB_PUBLISH_TOTAL.labels(result="error").inc()
             # Degrade to single-instance delivery rather than dropping the event.
             logger.warning(
                 "pubsub_publish_failed_local_fallback",

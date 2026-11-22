@@ -14,9 +14,9 @@
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
 | Stories DONE / total    | 12 / 39    |
-| Currently IN_PROGRESS   | 1 (S7.3)   |
+| Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
-| Currently PARTIAL       | 2 (S6.5, S11.2) |
+| Currently PARTIAL       | 3 (S6.5, S7.3, S11.2) |
 
 ---
 
@@ -81,7 +81,7 @@
 | ---- | ------ | ----- |
 | S7.1 | TODO   | structlog is configured but no `RequestIDMiddleware`. |
 | S7.2 | TODO   | OpenTelemetry. |
-| S7.3 | IN_PROGRESS | [claude] [2026-11-21] — T4: /metrics, custom WS/pubsub metrics, Prometheus + Grafana compose. |
+| S7.3 | PARTIAL | T4 DONE: `/metrics` (instrumentator) + `ws_active_connections`, `messages_broadcast_total`, `redis_pubsub_publish_total`, `message_broadcast_latency_seconds`; `server_ts` on `message.new`; Prometheus (Docker DNS discovery) + Grafana overview dashboard (`--profile observability`). TODO: `db_query_duration_seconds`, embedding metrics (S5.1), Latency/AI Worker/Database dashboards. |
 | S7.4 | TODO   | Sentry. |
 
 ## EPIC 8 — Product Features
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S7.3 PARTIAL (T4): Prometheus metrics + Grafana. 3 replicas scraped via DNS; 120 messages → counter 120, 360 latency observations (one per delivering replica). Removed `PROMETHEUS_MULTIPROC_DIR` from `.env.example` (crashed startup). nginx hides `/metrics`. 81 tests green.
 - `2026-11-21` — S6.3 DONE (T3): nginx on :8000 in front of `--scale backend=3`. 4 and 6 clients spread across 3 replicas each got 1 broadcast exactly once (3/3 runs). Live scale 3→4 picked up without restart. Migrations moved to a one-shot `migrate` service (replicas raced on `alembic upgrade`). 72 tests green.
 - `2026-11-21` — S6.5 PARTIAL (T2): pooled engine replaces NullPool (session round trip p50 34ms → 2.5ms locally). Migration `c7e2a9f4b1d3` adds 2 indexes CONCURRENTLY. `tests/test_db_pool_indexes.py` (5). 72 tests green.
 - `2026-11-21` — S6.1 DONE: Redis Pub/Sub fanout. `services/pubsub.py:RedisBus`, async `ConnectionManager.connect/disconnect`, handlers publish only. `tests/test_pubsub_fanout.py` (8). WS tests now use real Redis.

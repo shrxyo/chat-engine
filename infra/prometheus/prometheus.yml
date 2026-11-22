@@ -1,0 +1,22 @@
+# Prometheus scrape config (S7.3).
+#
+# Each backend replica exposes its own /metrics (one uvicorn process per
+# container, no multiprocess mode). The compose service name `backend`
+# resolves to every replica's IP through Docker DNS, so `--scale backend=N`
+# is picked up on the next refresh with no config change.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /metrics
+    dns_sd_configs:
+      - names: [backend]
+        type: A
+        port: 8000
+        refresh_interval: 5s
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

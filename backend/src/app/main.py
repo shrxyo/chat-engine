@@ -7,11 +7,13 @@ import structlog
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import engine, get_session
+from app.metrics import HTTP_METRICS
 from app.routers.auth import router as auth_router
 from app.routers.channels import router as channels_router
 from app.routers.dm import router as dm_router
@@ -70,6 +72,16 @@ def create_app() -> FastAPI:
     app.include_router(messages_router, prefix="/api")
     app.include_router(users_router, prefix="/api")
     app.include_router(ws_router)  # no prefix — path is /ws/{channel_id}
+
+    # S7.3: HTTP metrics + /metrics. Health probes run every few seconds and
+    # would drown out real traffic. WebSocket scopes are not instrumented;
+    # see app/metrics.py for the WS metrics.
+    instrumentator = Instrumentator(
+        excluded_handlers=["^/metrics$", "^/health$", "^/ready$"],
+    )
+    if HTTP_METRICS is not None:
+        instrumentator.add(HTTP_METRICS)
+    instrumentator.instrument(app).expose(app, include_in_schema=False)
 
     @app.get("/health", tags=["health"])
     async def health() -> dict[str, str]:

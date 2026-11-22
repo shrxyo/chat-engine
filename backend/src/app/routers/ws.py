@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal
+from app.metrics import MESSAGES_BROADCAST_TOTAL, now_ms
 from app.models.membership import ChannelMembership
 from app.models.message import Message
 from app.models.reaction import MessageReaction
@@ -19,6 +20,7 @@ from app.schemas.messages import MessageResponse
 from app.schemas.ws import (
     MessageDeletePayload,
     MessageEditPayload,
+    MessageNewBroadcastPayload,
     MessageNewPayload,
     MessageReactionPayload,
     WSMessageType,
@@ -190,6 +192,7 @@ async def _handle_message_new(
     payload_data: dict[str, Any],
     log: Any,
 ) -> None:
+    server_ts = now_ms()
     try:
         payload = MessageNewPayload(**payload_data)
     except ValidationError as exc:
@@ -210,12 +213,15 @@ async def _handle_message_new(
         await session.commit()
         await session.refresh(message)
 
-    msg_response = MessageResponse.model_validate(message)
+    msg_response = MessageNewBroadcastPayload.model_validate(
+        {**MessageResponse.model_validate(message).model_dump(), "server_ts": server_ts}
+    )
     broadcast: dict[str, Any] = {
         "type": WSMessageType.message_new,
         "payload": msg_response.model_dump(mode="json"),
     }
     await publish(channel_id, broadcast)
+    MESSAGES_BROADCAST_TOTAL.inc()
 
     log.info("ws_message_new", message_id=str(message.id))
     logger.info("embedding job enqueued", message_id=str(message.id))

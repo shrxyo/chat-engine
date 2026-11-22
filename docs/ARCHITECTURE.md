@@ -45,10 +45,11 @@ graph TB
   API --> R2
   Worker --> PG
   Worker --> Redis
-  GW1 -.metrics.-> OTel
-  API -.metrics.-> OTel
+  Prom -.scrape /metrics.-> GW1
+  Prom -.scrape /metrics.-> API
   Worker -.metrics.-> OTel
-  OTel --> Prom --> Graf
+  OTel --> Prom
+  Prom --> Graf
   API -.errors.-> Sentry
   Browser -.errors.-> Sentry
 ```
@@ -150,7 +151,7 @@ All messages are JSON: `{ "type": <WSMessageType>, "payload": <object> }`.
 
 | Type                | Direction        | Payload                                                            |
 | ------------------- | ---------------- | ------------------------------------------------------------------ |
-| `message.new`       | client ↔ server  | `{ content, reply_to_id? }`                                        |
+| `message.new`       | client ↔ server  | in: `{ content, reply_to_id? }` · out: message + `server_ts` (epoch ms received) |
 | `message.edit`      | client ↔ server  | `{ message_id, content }`                                          |
 | `message.delete`    | client ↔ server  | `{ message_id }`                                                   |
 | `message.reaction`  | client ↔ server  | `{ message_id, emoji }`                                            |
@@ -164,6 +165,22 @@ All messages are JSON: `{ "type": <WSMessageType>, "payload": <object> }`.
 | `error`             | server → client  | `{ message }`                                                      |
 
 Connection URL: `WS /ws/{channel_id}?token=<jwt>`. Server **must** authenticate and authorize before `ws.accept()`. Auth failure closes with code `4001`.
+
+---
+
+## Metrics (`S7.3`)
+
+Every backend replica serves its own `/metrics` (one uvicorn process per container, so no `PROMETHEUS_MULTIPROC_DIR`). Prometheus finds replicas through Docker DNS (`dns_sd_configs` on `backend`), so `--scale` needs no config change. nginx returns 404 for `/metrics`; it is only reachable on the compose network.
+
+| Metric | Type | Meaning |
+| ------ | ---- | ------- |
+| `ws_active_connections` | Gauge | Sockets held by this replica (read from `ConnectionManager` at scrape time) |
+| `messages_broadcast_total` | Counter | `message.new` accepted, counted once on the receiving replica |
+| `redis_pubsub_publish_total{result}` | Counter | Redis PUBLISH calls; `error` = local-only fallback |
+| `message_broadcast_latency_seconds` | Histogram | `server_ts` (handler start) → send to every local socket returned, observed on each delivering replica, so it includes DB insert, Redis hop and fanout |
+| `http_requests_total`, `http_request_duration_seconds`, `http_request_duration_highr_seconds` | Counter / Histogram | `prometheus-fastapi-instrumentator`; `/metrics`, `/health`, `/ready` excluded |
+
+`server_ts` is wall-clock time, so the cross-replica latency assumes the hosts' clocks agree (true on one Docker host; needs NTP across machines). Negative values are clamped to 0. Dashboard: `infra/grafana/dashboards/overview.json`.
 
 ---
 
@@ -266,6 +283,6 @@ make -C frontend install && make dev-frontend
 
 Dockerfiles live at `backend/Dockerfile` and `frontend/Dockerfile` (multi-stage, non-root runtime user).
 
-Optional `--profile observability` brings up Prometheus, Grafana, OTel collector, Jaeger (Epic 7 — not yet wired).
+Optional `--profile observability` brings up Prometheus (:9090) and Grafana (:3001, overview dashboard as home, anonymous read-only). OTel collector and Jaeger follow in `S7.2`.
 
 Port reservations are listed in `infra/AGENTS.md`.

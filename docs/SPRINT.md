@@ -26,7 +26,7 @@
 | T1 | S6.1 | DONE | 2h | B1, B2 |
 | T2 | S6.5 (partial) | DONE | 45m | B1 |
 | T3 | S6.3 | DONE | 1h | B1 |
-| T4 | S7.3 | IN_PROGRESS | 1.5h | B2, B3 |
+| T4 | S7.3 | DONE | 1.5h | B2, B3 |
 | T5 | S6.4 | TODO | 1.5h | B1, B2 |
 | T6 | S7.2 | TODO | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |
@@ -89,15 +89,22 @@ Branch per story: `feat/<story-id>-<slug>`.
 - Results: 72 tests pass. Lint clean. Pyright 91 (unchanged).
 - Not done: uvicorn doesn't trust `X-Forwarded-For` yet (`--proxy-headers --forwarded-allow-ips`). Matters for S3.2 rate limiting by IP.
 
-## T4 — S7.3 Prometheus + Grafana · branch `feat/S7.3-prometheus`
+## T4 — S7.3 Prometheus + Grafana · branch `feat/S7.3-prometheus` · DONE
 
-- [ ] Tests first: `/metrics` returns 200 and contains custom metric names
-- [ ] Add `prometheus-fastapi-instrumentator` → `/metrics`
-- [ ] `app/metrics.py`: `ws_active_connections` (Gauge), `messages_broadcast_total` (Counter), `redis_pubsub_publish_total` (Counter), `message_broadcast_latency_seconds` (Histogram, receive → fanout complete)
-- [ ] Add `server_ts` (epoch ms) to `message.new` broadcast payload (`schemas/ws.py` + handler)
-- [ ] Multi-process note: each scaled instance exposes its own `/metrics`; Prometheus scrapes via Docker DNS service discovery
-- [ ] `infra/prometheus/prometheus.yml`; compose services `prometheus` (:9090) and `grafana` (:3001)
-- [ ] `infra/grafana/dashboards/overview.json` + provisioning: active connections, msgs/sec, broadcast latency p50/p95/p99, HTTP latency
+- [x] Tests first: `tests/test_metrics.py` (9): `/metrics` exposes all 4 custom metrics; HTTP requests counted by handler/status; `/health` not instrumented; connection count ignores a replaced socket; gauge follows a real socket open/close; `message.new` carries `server_ts` and bumps counter + histogram + publish counter; latency only observed for timestamped `message.new` with local sockets; failed publish counted as `error`
+- [x] `prometheus-fastapi-instrumentator` → `/metrics` (not in OpenAPI). `/metrics`, `/health`, `/ready` excluded from HTTP metrics.
+  - **Found:** the instrumentator registers its collectors on an app's first request; every later app in the process hits "duplicated timeseries" and silently records nothing (tests build one app per test). Fix: collectors built once in `app/metrics.py` (`HTTP_METRICS`) and `.add()`ed to each app. Finer HTTP buckets (from 1ms; library default starts at 10ms).
+- [x] `app/metrics.py`: `ws_active_connections` (Gauge, `set_function` on the manager's `total_connection_count()`, so it can't drift), `messages_broadcast_total` (once per message on the receiving replica), `redis_pubsub_publish_total{result=ok|error}`, `message_broadcast_latency_seconds` (buckets 1ms–2.5s)
+- [x] `server_ts` (epoch ms, taken at handler start) in `message.new` payload: `schemas/ws.py:MessageNewBroadcastPayload`. Latency observed in `ConnectionManager.broadcast_to_channel` after all local sends return, on every replica that delivers.
+- [x] One process per container, so no multiprocess mode. **Removed `PROMETHEUS_MULTIPROC_DIR` from `.env.example`** (and local `.env`): its presence makes the instrumentator raise at startup and switches prometheus_client to mmap mode. Prometheus discovers replicas with `dns_sd_configs` on `backend` (refresh 5s).
+- [x] `infra/prometheus/prometheus.yml`; compose `prometheus` (`v3.5.0`, :9090) and `grafana` (`12.1.1`, :3001) under `--profile observability`, healthchecked. Grafana: provisioned datasource + dashboard, overview as home, anonymous Viewer, admin password from `GRAFANA_ADMIN_PASSWORD` (default `admin`, local only).
+- [x] `infra/grafana/dashboards/overview.json` (11 panels): replicas up, active connections (total + per replica), msgs/sec, broadcast p50/p95/p99 with a 100ms threshold line, Redis publishes by result, HTTP p50/p95/p99, HTTP req/s by status, HTTP p95 by route
+- [x] **Added:** nginx returns 404 for `/metrics` (otherwise public, from a random replica).
+- [x] Verify (scratchpad `metrics_traffic.py`, not committed: 6 sockets via nginx over 3 replicas, 120 messages, 6 HTTP calls): Prometheus sees 3 targets, 2 sockets each; `messages_broadcast_total` = 120 (40/replica); 360 latency observations (= 120 × 3 delivering replicas); 126 publishes ok (120 + 6 joins), 0 errors; every socket got all 120. All 11 panel queries return data through Grafana's query API.
+- Results: 81 tests pass. Lint clean. Pyright 91 (unchanged; 0 in new code).
+- **Observed (light load, dev mode with SQL echo, not a benchmark):** server broadcast p50 7.7ms / p95 37.5ms / p99 47.5ms; client-measured own-echo RTT p50 6.7ms / p99 53ms. Real numbers come from T5.
+- **Found, not fixed (pre-existing):** `routers/ws.py` calls `manager.connect()` and the presence.join publish *before* the `try/finally` that unregisters the socket. If the handler is cancelled or raises there (e.g. during the Redis subscribe wait), the socket stays registered and the gauge over-counts. Hit only by TestClient's cancel-on-exit in tests; uvicorn doesn't cancel on client close. Fix: move both inside the `try`.
+- Not done (rest of BACKLOG S7.3): `db_query_duration_seconds`, embedding metrics (need S5.1), Latency / AI Worker / Database dashboards.
 
 ## T5 — S6.4 k6 load test · branch `feat/S6.4-k6`
 
@@ -150,6 +157,7 @@ Branch per story: `feat/<story-id>-<slug>`.
 
 ## Log (newest first)
 
+- `2026-11-21` — T4 DONE (S7.3 partial). `/metrics` + 4 custom metrics + `server_ts`; Prometheus (DNS discovery over replicas) + Grafana overview dashboard. Counts verified exact across 3 replicas. 81 tests green.
 - `2026-11-21` — T3 DONE (S6.3). nginx LB over 3 replicas; broadcast reaches clients on every replica exactly once. Live scale-up without restart. 72 tests green.
 - `2026-11-21` — T2 DONE (S6.5 partial). Pooled engine + 2 indexes. Session round trip p50 34ms → 2.5ms. 72 tests green.
 - `2026-11-21` — T1 DONE (S6.1). Cross-instance fanout via Redis verified with 2 processes. 67 tests green.
