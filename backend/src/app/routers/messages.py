@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import select
 
 from app.dependencies import ChannelMemberDep, CurrentUser, SessionDep
 from app.models.message import Message
@@ -12,6 +11,7 @@ from app.schemas.messages import (
     MessageResponse,
     MessageUpdateRequest,
 )
+from app.services.messages import UnknownCursorError, list_channel_messages
 
 router = APIRouter(tags=["messages"])
 
@@ -23,25 +23,34 @@ async def list_messages(
     session: SessionDep,
     before: Annotated[
         uuid.UUID | None,
-        Query(description="Cursor: return messages with id < before"),
+        Query(description="Cursor: messages older than this message id"),
     ] = None,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    after: Annotated[
+        uuid.UUID | None,
+        Query(
+            description=(
+                "Cursor: the `limit` messages just newer than this message id "
+                "(reconnect gap fill). has_more=true means more remain."
+            )
+        ),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> MessageListResponse:
-    query = (
-        select(Message)
-        .where(Message.channel_id == channel_id)
-        .where(Message.deleted_at.is_(None))
-        .order_by(Message.id.desc())
-        .limit(limit + 1)
-    )
-    if before is not None:
-        query = query.where(Message.id < before)
-
-    result = await session.execute(query)
-    rows = result.scalars().all()
-
-    has_more = len(rows) > limit
-    messages = rows[:limit]
+    """Messages newest-first, ordered by (created_at, id)."""
+    if before is not None and after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Use either before or after, not both",
+        )
+    try:
+        messages, has_more = await list_channel_messages(
+            session, channel_id, limit=limit, before=before, after=after
+        )
+    except UnknownCursorError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cursor is not a message in this channel",
+        ) from None
 
     return MessageListResponse(
         messages=[MessageResponse.model_validate(m) for m in messages],

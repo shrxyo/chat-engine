@@ -1,6 +1,7 @@
 """S6.5 (partial): pooled engine + indexes for the hot read paths."""
 
 import uuid
+from datetime import datetime
 
 import pytest
 from sqlalchemy import select, text
@@ -50,7 +51,9 @@ async def _plan(session: AsyncSession, stmt: str, params: dict[str, object]) -> 
 
 async def test_message_list_index_exists(db_session: AsyncSession) -> None:
     names = await _index_names(db_session, "messages")
-    assert "ix_messages_channel_id_id_live" in names
+    assert "ix_messages_channel_id_created_at_id_live" in names
+    # S4.3 replaced the (channel_id, id) index: random uuid4 ids have no order.
+    assert "ix_messages_channel_id_id_live" not in names
 
 
 async def test_membership_channel_index_exists(db_session: AsyncSession) -> None:
@@ -66,12 +69,33 @@ async def test_message_list_query_uses_index_without_sort(
         select(Message)
         .where(Message.channel_id == uuid.uuid4())
         .where(Message.deleted_at.is_(None))  # pyright: ignore[reportOptionalMemberAccess, reportAttributeAccessIssue, reportUnknownMemberType]
-        .order_by(Message.id.desc())  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+        .order_by(Message.created_at.desc(), Message.id.desc())  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
         .limit(51)
     )
     compiled = query.compile(compile_kwargs={"literal_binds": True})
     plan = await _plan(db_session, str(compiled), {})
-    assert "ix_messages_channel_id_id_live" in plan
+    assert "ix_messages_channel_id_created_at_id_live" in plan
+    assert "Sort" not in plan
+
+
+@pytest.mark.parametrize("direction", ["after", "before"])
+async def test_message_cursor_query_uses_index_without_sort(
+    db_session: AsyncSession, direction: str
+) -> None:
+    """S4.3: (created_at, id) row-comparison cursors are index conditions."""
+    op, order = (">", "ASC") if direction == "after" else ("<", "DESC")
+    stmt = (
+        "SELECT id FROM messages WHERE channel_id = :ch AND deleted_at IS NULL "
+        f"AND (created_at, id) {op} (:ts, :id) "
+        f"ORDER BY created_at {order}, id {order} LIMIT 201"
+    )
+    plan = await _plan(
+        db_session,
+        stmt,
+        {"ch": uuid.uuid4(), "ts": datetime(2026, 1, 1), "id": uuid.uuid4()},
+    )
+    assert "ix_messages_channel_id_created_at_id_live" in plan
+    assert "Index Cond" in plan and "created_at" in plan.split("Index Cond", 1)[1]
     assert "Sort" not in plan
 
 

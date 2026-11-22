@@ -1,7 +1,7 @@
 """Tests for /api/channels/{channel_id}/messages and /api/messages/* endpoints."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import AsyncClient
@@ -137,6 +137,209 @@ async def test_list_messages_pagination_cursor(
     second_page = r2.json()["messages"]
     assert len(second_page) == 2
     assert r2.json()["has_more"] is False
+
+
+async def _seed_timeline(
+    db_session: AsyncSession, count: int, *, same_time: bool = False
+) -> tuple:
+    """(user, channel, messages oldest-first) with distinct created_at values.
+
+    ids are random uuid4, so id order and time order disagree: anything that
+    orders or cursors by id alone fails these tests.
+    """
+    user, channel, _ = await _seed(db_session)
+    base = datetime(2026, 1, 1, 12, 0, 0)
+    messages = []
+    for i in range(count):
+        created = base if same_time else base + timedelta(seconds=i)
+        msg = MessageFactory.build(
+            channel_id=channel.id, user_id=user.id, created_at=created
+        )
+        db_session.add(msg)
+        messages.append(msg)
+    await db_session.commit()
+    if same_time:
+        messages.sort(key=lambda m: m.id)  # ties break by id
+    return user, channel, messages
+
+
+def _ids(response) -> list[str]:  # noqa: ANN001
+    return [m["id"] for m in response.json()["messages"]]
+
+
+@pytest.mark.asyncio
+async def test_list_messages_newest_first_by_created_at(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, messages = await _seed_timeline(db_session, 8)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?limit=3", headers=auth_header(user.id)
+    )
+    assert r.status_code == 200
+    assert _ids(r) == [str(m.id) for m in reversed(messages[-3:])]
+
+
+@pytest.mark.asyncio
+async def test_list_messages_before_pages_without_gaps_or_repeats(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, messages = await _seed_timeline(db_session, 10)
+
+    seen: list[str] = []
+    url = f"/api/channels/{channel.id}/messages?limit=4"
+    cursor = None
+    while True:
+        r = await client.get(
+            url + (f"&before={cursor}" if cursor else ""), headers=auth_header(user.id)
+        )
+        assert r.status_code == 200
+        seen += _ids(r)
+        if not r.json()["has_more"]:
+            break
+        cursor = seen[-1]
+
+    assert seen == [str(m.id) for m in reversed(messages)]
+
+
+@pytest.mark.asyncio
+async def test_list_messages_after_returns_newer_messages(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, messages = await _seed_timeline(db_session, 6)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?after={messages[2].id}",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == 200
+    # Same order as every other page: newest first.
+    assert _ids(r) == [str(m.id) for m in reversed(messages[3:])]
+    assert r.json()["has_more"] is False
+
+
+@pytest.mark.asyncio
+async def test_list_messages_after_latest_is_empty(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, messages = await _seed_timeline(db_session, 3)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?after={messages[-1].id}",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == 200
+    assert r.json() == {"messages": [], "has_more": False}
+
+
+@pytest.mark.asyncio
+async def test_list_messages_after_limit_takes_oldest_and_sets_has_more(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """A gap bigger than limit: the page right after the cursor, has_more=True,
+    so the client can page forward with after=<newest returned>."""
+    user, channel, messages = await _seed_timeline(db_session, 10)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?after={messages[1].id}&limit=3",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == 200
+    assert _ids(r) == [str(m.id) for m in reversed(messages[2:5])]
+    assert r.json()["has_more"] is True
+
+
+@pytest.mark.asyncio
+async def test_list_messages_after_skips_deleted_and_accepts_deleted_cursor(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, messages = await _seed_timeline(db_session, 5)
+    now = datetime.now(UTC).replace(tzinfo=None)
+    messages[1].deleted_at = now  # the cursor: deleted while client was away
+    messages[3].deleted_at = now
+    db_session.add_all([messages[1], messages[3]])
+    await db_session.commit()
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?after={messages[1].id}",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == 200
+    assert _ids(r) == [str(messages[4].id), str(messages[2].id)]
+
+
+@pytest.mark.asyncio
+async def test_list_messages_cursor_ties_broken_by_id(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, messages = await _seed_timeline(db_session, 5, same_time=True)
+    url = f"/api/channels/{channel.id}/messages"
+
+    r_after = await client.get(
+        f"{url}?after={messages[1].id}", headers=auth_header(user.id)
+    )
+    r_before = await client.get(
+        f"{url}?before={messages[1].id}", headers=auth_header(user.id)
+    )
+    assert _ids(r_after) == [str(m.id) for m in reversed(messages[2:])]
+    assert _ids(r_before) == [str(messages[0].id)]
+
+
+@pytest.mark.asyncio
+async def test_list_messages_before_and_after_together_422(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, messages = await _seed_timeline(db_session, 2)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages"
+        f"?after={messages[0].id}&before={messages[1].id}",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("param", ["after", "before"])
+async def test_list_messages_unknown_cursor_400(
+    client: AsyncClient, db_session: AsyncSession, param: str
+) -> None:
+    user, channel, _ = await _seed_timeline(db_session, 2)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?{param}={uuid.uuid4()}",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_messages_cursor_from_other_channel_400(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    user, channel, _ = await _seed_timeline(db_session, 2)
+    other_user, _, other_messages = await _seed_timeline(db_session, 1)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?after={other_messages[0].id}",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("limit", "status"), [(200, 200), (201, 422), (0, 422)])
+async def test_list_messages_limit_bounds(
+    client: AsyncClient, db_session: AsyncSession, limit: int, status: int
+) -> None:
+    """Gap fill asks for up to 200 in one request (S4.3)."""
+    user, channel, _ = await _seed(db_session)
+
+    r = await client.get(
+        f"/api/channels/{channel.id}/messages?limit={limit}",
+        headers=auth_header(user.id),
+    )
+    assert r.status_code == status
 
 
 @pytest.mark.asyncio

@@ -10,11 +10,13 @@ class Message(SQLModel, table=True):
     __tablename__ = "messages"
     __table_args__ = (
         # Channel history: WHERE channel_id = ? AND deleted_at IS NULL
-        # ORDER BY id DESC. One index scan, no sort. Partial so soft-deleted
+        # ORDER BY created_at, id, plus (created_at, id) row-comparison
+        # cursors (S4.3). One index scan, no sort. Partial so soft-deleted
         # rows don't take up space in it.
         Index(
-            "ix_messages_channel_id_id_live",
+            "ix_messages_channel_id_created_at_id_live",
             "channel_id",
+            "created_at",
             "id",
             postgresql_where=text("deleted_at IS NULL"),
         ),
