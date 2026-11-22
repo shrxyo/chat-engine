@@ -9,6 +9,8 @@ export const queryKeys = {
     detail: (id: string) => ['channels', id] as const,
     members: (id: string) => ['channels', id, 'members'] as const,
     messages: (id: string) => ['channels', id, 'messages'] as const,
+    messagesAfter: (id: string, afterId: string) =>
+      ['channels', id, 'messages-after', afterId] as const,
   },
   dm: {
     all: () => ['dm'] as const,

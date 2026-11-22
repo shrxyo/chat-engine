@@ -6,45 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook } from '@testing-library/react'
 import { PING_INTERVAL_MS, WebSocketProvider } from '@/contexts/WebSocketContext'
 import { PresenceProvider, usePresence } from '@/contexts/PresenceContext'
+import { installFakeSocket, lastSocket } from '@/test/fakeSocket'
 
 // Stable reference, like next-auth's: a new object per render would make the
 // provider reconnect on every render.
 const session = { data: { accessToken: 'test-token', user: { id: 'user-1' } } }
 vi.mock('next-auth/react', () => ({ useSession: () => session }))
-
-class FakeSocket {
-  static OPEN = 1
-  static instances: FakeSocket[] = []
-
-  readyState = 0
-  sent: unknown[] = []
-  onopen: (() => void) | null = null
-  onmessage: ((e: { data: string }) => void) | null = null
-  onclose: (() => void) | null = null
-  onerror: (() => void) | null = null
-
-  constructor(public url: string) {
-    FakeSocket.instances.push(this)
-  }
-
-  send(data: string) {
-    this.sent.push(JSON.parse(data))
-  }
-
-  close() {
-    this.readyState = 3
-    this.onclose?.()
-  }
-
-  open() {
-    this.readyState = FakeSocket.OPEN
-    this.onopen?.()
-  }
-
-  receive(type: string, payload: unknown) {
-    this.onmessage?.({ data: JSON.stringify({ type, payload }) })
-  }
-}
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <WebSocketProvider channelId="ch-1">
@@ -52,25 +19,18 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
   </WebSocketProvider>
 )
 
-function lastSocket(): FakeSocket {
-  const ws = FakeSocket.instances.at(-1)
-  if (!ws) throw new Error('no socket opened')
-  return ws
-}
-
 describe('presence', () => {
-  const originalWebSocket = globalThis.WebSocket
+  let restoreSocket: () => void
 
   beforeEach(() => {
     vi.useFakeTimers()
-    FakeSocket.instances = []
-    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    restoreSocket = installFakeSocket()
   })
 
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
-    globalThis.WebSocket = originalWebSocket
+    restoreSocket()
   })
 
   it('replaces the online set with presence.snapshot', () => {

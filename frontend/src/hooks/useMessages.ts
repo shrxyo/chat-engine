@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useInfiniteQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query'
 import { useSession } from 'next-auth/react'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import { queryKeys } from '@/lib/query-keys'
 import { useWebSocket } from './useWebSocket'
 import type {
@@ -23,12 +23,41 @@ export function flattenMessages(data: MessagesInfiniteData | undefined): Message
   return [...data.pages].reverse().flatMap((p) => [...p.messages].reverse())
 }
 
+/** Largest gap merged in place after a reconnect; anything bigger reloads (S4.3). */
+export const GAP_FILL_LIMIT = 200
+
+/** Newest-first, by (created_at, id): the server's order. */
+function compareNewestFirst(a: Message, b: Message): number {
+  if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0
+}
+
+/**
+ * Merge gap-fill results into the newest page (newest-first). Dedupes by id;
+ * live messages that arrived on the new socket may already be there.
+ * Pending (unconfirmed) messages stay in front: they carry client clocks.
+ */
+export function mergeGapIntoPage(pageMessages: Message[], fetched: Message[]): Message[] {
+  const pending = pageMessages.filter((m) => m.pending)
+  const byId = new Map<string, Message>()
+  for (const m of pageMessages) if (!m.pending) byId.set(m.id, m)
+  for (const m of fetched) byId.set(m.id, m)
+  return [...pending, ...[...byId.values()].sort(compareNewestFirst)]
+}
+
+/** Id of the newest server-confirmed message we hold, if any. */
+function newestConfirmedId(data: MessagesInfiniteData | undefined): string | undefined {
+  return data?.pages[0]?.messages.find((m) => !m.pending)?.id
+}
+
 interface UseMessagesReturn {
   messages: Message[]
   isLoading: boolean
   isFetchingNextPage: boolean
   hasNextPage: boolean
   fetchNextPage: () => void
+  /** True while fetching messages missed during a disconnect. */
+  isCatchingUp: boolean
   sendMessage: (content: string) => void
   editMessage: (messageId: string, content: string) => void
   deleteMessage: (messageId: string) => void
@@ -40,7 +69,8 @@ export function useMessages(channelId: string): UseMessagesReturn {
   const currentUserId = session?.user?.id as string | undefined
 
   const queryClient = useQueryClient()
-  const { send, subscribe } = useWebSocket()
+  const { send, subscribe, reconnectCount } = useWebSocket()
+  const [isCatchingUp, setIsCatchingUp] = useState(false)
 
   // Map of content → tempId for pending messages (used to reconcile server echo)
   const pendingByContent = useRef<Map<string, string>>(new Map())
@@ -147,6 +177,84 @@ export function useMessages(channelId: string): UseMessagesReturn {
   }, [subscribe, queryClient, queryKey, channelId, currentUserId])
 
   // ---------------------------------------------------------------------------
+  // Reconnect gap fill (S4.3)
+  // ---------------------------------------------------------------------------
+
+  // Start from the count at mount, so mounting on an already-reconnected
+  // socket does not trigger a fill.
+  const handledReconnectRef = useRef(reconnectCount)
+
+  useEffect(() => {
+    if (reconnectCount === handledReconnectRef.current) return
+    handledReconnectRef.current = reconnectCount
+
+    const current = queryClient.getQueryData<MessagesInfiniteData>(queryKey)
+    if (!current) return // initial load still in flight; it will see everything
+    const afterId = newestConfirmedId(current)
+    const reload = () => queryClient.resetQueries({ queryKey, exact: true })
+    if (!afterId) {
+      void reload()
+      return
+    }
+
+    let cancelled = false
+    setIsCatchingUp(true)
+    queryClient
+      .fetchQuery({
+        queryKey: queryKeys.channels.messagesAfter(channelId, afterId),
+        queryFn: () => api.messages.listAfter(channelId, afterId, GAP_FILL_LIMIT, token),
+        staleTime: 0,
+        gcTime: 0,
+        retry: false,
+      })
+      .then(
+        async (gap) => {
+          if (cancelled) return
+          if (gap.has_more) {
+            // More than GAP_FILL_LIMIT missed: start over from the newest page.
+            await reload()
+            return
+          }
+          queryClient.setQueryData<MessagesInfiniteData>(queryKey, (old) => {
+            if (!old) return old
+            let firstPage = old.pages[0]
+            // Our own messages whose echo was lost in the gap: drop the pending copy.
+            for (const m of gap.messages) {
+              const tempId = m.user_id === currentUserId && pendingByContent.current.get(m.content)
+              if (tempId) {
+                pendingByContent.current.delete(m.content)
+                firstPage = { ...firstPage, messages: firstPage.messages.filter((p) => p.id !== tempId) }
+              }
+            }
+            return {
+              ...old,
+              pages: [
+                { ...firstPage, messages: mergeGapIntoPage(firstPage.messages, gap.messages) },
+                ...old.pages.slice(1),
+              ],
+            }
+          })
+        },
+        async (err: unknown) => {
+          if (cancelled) return
+          // 400: cursor unknown to the server, so reload. Anything else
+          // (network): refetch the loaded pages and keep showing them meanwhile.
+          if (err instanceof ApiError && err.status === 400) await reload()
+          else await queryClient.invalidateQueries({ queryKey, exact: true })
+        },
+      )
+      .finally(() => {
+        if (!cancelled) setIsCatchingUp(false)
+      })
+
+    return () => {
+      cancelled = true
+      setIsCatchingUp(false)
+    }
+    // queryKey is rebuilt every render, so it is left out; channelId covers it.
+  }, [reconnectCount, channelId, queryClient, token, currentUserId])
+
+  // ---------------------------------------------------------------------------
   // Mutations
   // ---------------------------------------------------------------------------
 
@@ -213,6 +321,7 @@ export function useMessages(channelId: string): UseMessagesReturn {
     isFetchingNextPage,
     hasNextPage: hasNextPage ?? false,
     fetchNextPage,
+    isCatchingUp,
     sendMessage,
     editMessage,
     deleteMessage,

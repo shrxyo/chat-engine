@@ -67,6 +67,17 @@ export const api = {
         token,
       )
     },
+    /** Messages just newer than `afterId`, newest-first (S4.3 gap fill). */
+    listAfter: (
+      channelId: string,
+      afterId: string,
+      limit: number,
+      token?: string | null,
+    ) =>
+      apiFetch<MessageListResponse>(
+        `/api/channels/${channelId}/messages?after=${encodeURIComponent(afterId)}&limit=${limit}`,
+        token,
+      ),
     create: (
       channelId: string,
       payload: { content: string; reply_to_id?: string },

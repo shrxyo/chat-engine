@@ -12,8 +12,19 @@ import { useSession } from 'next-auth/react'
 
 export type WSHandler = (payload: unknown) => void
 
+/**
+ * - connecting: no socket has opened yet for this channel
+ * - open: socket is open
+ * - reconnecting: a socket was open for this channel and dropped (S4.3)
+ */
+export type ConnectionStatus = 'connecting' | 'open' | 'reconnecting'
+
 export interface WebSocketContextValue {
   isConnected: boolean
+  status: ConnectionStatus
+  /** Opens after the first one for this channel. Changes on every reconnect,
+   * so consumers can re-sync state they may have missed (gap fill). */
+  reconnectCount: number
   send: (type: string, payload: unknown) => void
   subscribe: (type: string, handler: WSHandler) => () => void
 }
@@ -33,7 +44,9 @@ interface WebSocketProviderProps {
 
 export function WebSocketProvider({ channelId, children }: WebSocketProviderProps) {
   const { data: session } = useSession()
-  const [isConnected, setIsConnected] = useState(false)
+  const [status, setStatus] = useState<ConnectionStatus>('connecting')
+  const [reconnectCount, setReconnectCount] = useState(0)
+  const isConnected = status === 'open'
 
   const wsRef = useRef<WebSocket | null>(null)
   const handlersRef = useRef<Map<string, Set<WSHandler>>>(new Map())
@@ -42,6 +55,9 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // Track whether the provider is still mounted
   const mountedRef = useRef(true)
+  // Channel whose socket has opened at least once. A later open for the same
+  // channel is a reconnect; a new channel starts over.
+  const openedChannelRef = useRef<string | null>(null)
 
   const getToken = useCallback(() => {
     // next-auth v5: accessToken is surfaced via session callback in auth.ts
@@ -70,7 +86,12 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
     ws.onopen = () => {
       if (!mountedRef.current) return
       attemptRef.current = 0
-      setIsConnected(true)
+      if (openedChannelRef.current === channelId) {
+        setReconnectCount((n) => n + 1)
+      } else {
+        openedChannelRef.current = channelId
+      }
+      setStatus('open')
       stopPing()
       pingTimerRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -92,7 +113,7 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
     ws.onclose = () => {
       stopPing()
       if (!mountedRef.current) return
-      setIsConnected(false)
+      setStatus(openedChannelRef.current === channelId ? 'reconnecting' : 'connecting')
       wsRef.current = null
 
       // Exponential backoff with ±20 % jitter
@@ -112,6 +133,7 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
   // Connect when the token is available, reconnect if channelId changes
   useEffect(() => {
     mountedRef.current = true
+    if (openedChannelRef.current !== channelId) setStatus('connecting')
     connect()
 
     return () => {
@@ -121,7 +143,7 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
       wsRef.current?.close()
       wsRef.current = null
     }
-  }, [connect, stopPing])
+  }, [connect, stopPing, channelId])
 
   const send = useCallback((type: string, payload: unknown) => {
     const ws = wsRef.current
@@ -140,7 +162,7 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
   }, [])
 
   return (
-    <WebSocketContext.Provider value={{ isConnected, send, subscribe }}>
+    <WebSocketContext.Provider value={{ isConnected, status, reconnectCount, send, subscribe }}>
       {children}
     </WebSocketContext.Provider>
   )

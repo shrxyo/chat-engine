@@ -5,9 +5,11 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { format, isToday, isYesterday, isSameDay } from 'date-fns'
 import { useSession } from 'next-auth/react'
 import { useMessages } from '@/hooks/useMessages'
+import { useWebSocket } from '@/hooks/useWebSocket'
 import { useTypingIndicator } from '@/hooks/useTypingIndicator'
 import { Message } from './Message'
 import { TypingIndicator } from './TypingIndicator'
+import { ConnectionBanner } from './ConnectionBanner'
 import { MessageInput } from './MessageInput'
 import { ChannelHeader, useChannelDisplayInfo } from '@/components/layout/ChannelHeader'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -57,8 +59,18 @@ export function MessageList({ channelId }: MessageListProps) {
   const currentUserId = session?.user?.id as string | undefined
   const { displayName: channelName, isDm } = useChannelDisplayInfo(channelId)
 
-  const { messages, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, sendMessage, editMessage, deleteMessage } =
-    useMessages(channelId)
+  const {
+    messages,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    isCatchingUp,
+    sendMessage,
+    editMessage,
+    deleteMessage,
+  } = useMessages(channelId)
+  const { status: connectionStatus } = useWebSocket()
   const { typingUsers, notifyTyping, notifyStopTyping } = useTypingIndicator(currentUserId)
 
   const items = buildItems(messages)
@@ -149,6 +161,10 @@ export function MessageList({ channelId }: MessageListProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <ChannelHeader channelId={channelId} />
+      <ConnectionBanner
+        isReconnecting={connectionStatus === 'reconnecting'}
+        isCatchingUp={isCatchingUp}
+      />
 
       {/* Scrollable message area */}
       <div
