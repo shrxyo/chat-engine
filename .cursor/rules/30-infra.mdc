@@ -23,7 +23,8 @@ Defer to `infra/AGENTS.md` for layout and commands.
 | ----------- | ---- | --------- |
 | Postgres    | 5433 | 5432      |
 | Redis       | 6379 | 6379      |
-| Backend     | 8000 | 8000      |
+| nginx (LB)  | 8000 | 8080      |
+| Backend     | none | 8000      |
 | Worker      | n/a  | n/a       |
 | Frontend    | 3000 | 3000      |
 | Prometheus  | 9090 | 9090      |

@@ -25,7 +25,7 @@
 | T0 | — (setup) | DONE | 10m | — |
 | T1 | S6.1 | DONE | 2h | B1, B2 |
 | T2 | S6.5 (partial) | DONE | 45m | B1 |
-| T3 | S6.3 | IN_PROGRESS | 1h | B1 |
+| T3 | S6.3 | DONE | 1h | B1 |
 | T4 | S7.3 | TODO | 1.5h | B2, B3 |
 | T5 | S6.4 | TODO | 1.5h | B1, B2 |
 | T6 | S7.2 | TODO | 1.5h | B3 |
@@ -75,12 +75,19 @@ Branch per story: `feat/<story-id>-<slug>`.
 - **Measured** (scratchpad `pool_bench.py`, 200 iterations, open session + `SELECT 1` + commit, localhost): NullPool p50 34.3ms / p99 283ms → pooled p50 2.5ms / p99 65ms. This accounts for most of T1's ~70–80ms per message. `echo=True` in development adds ~1.7ms p50; T5 should run with `ENVIRONMENT` ≠ development.
 - **Found, not fixed (pre-existing, out of scope):** message pagination orders and cursors by `Message.id`, which is a random `uuid4`. So "newest 50" is not newest-by-time and `before=` cursors skip/repeat messages. Matters for T8 (`after=` gap fill). Fix needs a time-ordered key (UUIDv7 or `(created_at, id)` cursor); would need its own index then.
 
-## T3 — S6.3 Load balancing · branch `feat/S6.3-nginx-lb` · IN_PROGRESS
+## T3 — S6.3 Load balancing · branch `feat/S6.3-nginx-lb` · DONE
 
-- [ ] `infra/nginx/nginx.conf`: upstream round-robin to `backend:8000`, WebSocket upgrade headers (`Upgrade`, `Connection`), long `proxy_read_timeout`
-- [ ] `docker-compose.yml`: `nginx` service on `:8000`; remove host port mapping from `backend` so it can scale
-- [ ] Frontend env still points at `localhost:8000` (now nginx) — verify
-- [ ] Verify: `docker compose up --scale backend=3`; 3+ clients across instances all receive the same broadcast (check logs show different instance hostnames)
+- [x] `infra/nginx/nginx.conf` (mounted as `conf.d/default.conf`): `upstream backend` round-robin, no stickiness; `Upgrade`/`Connection` via `map` (empty `Connection` for plain HTTP so upstream `keepalive 32` works); `proxy_read_timeout`/`proxy_send_timeout` 3600s; `X-Forwarded-*`; access log includes `upstream=$upstream_addr`
+  - `resolver 127.0.0.11 valid=5s` + `server backend:8000 resolve` (needs nginx ≥ 1.27.3) so replicas added or removed by `--scale` join/leave without restarting nginx
+  - Health: OSS nginx has no active checks. Passive: `max_fails=2 fail_timeout=5s`, `proxy_next_upstream error timeout http_502 http_503`, `proxy_connect_timeout 2s`. Backend compose healthcheck tightened to every 5s (gates nginx startup). nginx liveness at `/nginx-health`.
+- [x] `docker-compose.yml`: `nginx` (`nginxinc/nginx-unprivileged:1.28-alpine`, non-root) on host `:8000` → container 8080. `backend` host port removed (`expose: 8000`).
+- [x] **Added (not in plan, needed to scale):** one-shot `migrate` service runs `alembic upgrade head`; `backend` depends on it (`service_completed_successfully`) and sets `RUN_MIGRATIONS=false`. Otherwise every replica ran migrations at start and raced on DDL. `docker-entrypoint.sh` still migrates by default outside compose.
+- [x] Frontend: browser URLs unchanged (`localhost:8000`, now nginx). Server-side `BACKEND_URL` → `http://nginx:8080` so Next.js rewrites are balanced too. Verified `GET :3000/api/channels` → 401 from a backend via nginx.
+- [x] Verify (scratchpad `lb_check.py`, not committed: creates N users + channel, connects N sockets through :8000, one sends, reads `upstream=` from nginx logs): 3 replicas, 4 clients → upstreams 2/1/1, deliveries `[1,1,1,1]`; 6 clients → 2/2/2, all exactly once. 3/3 runs PASS.
+- [x] Live scale 3 → 4 without touching nginx: 12 requests split 3/3/3/3.
+- [x] `docker kill` of one replica, no nginx restart: run 1, 1/12 requests 502 (`no live upstreams`, during the DNS update window); run 2, 0/20 errors (one request retried to a live peer after the 2s connect timeout). Sockets on a killed replica drop; client reconnect handles it (gap fill is T8).
+- Results: 72 tests pass. Lint clean. Pyright 91 (unchanged).
+- Not done: uvicorn doesn't trust `X-Forwarded-For` yet (`--proxy-headers --forwarded-allow-ips`). Matters for S3.2 rate limiting by IP.
 
 ## T4 — S7.3 Prometheus + Grafana · branch `feat/S7.3-prometheus`
 
@@ -143,6 +150,7 @@ Branch per story: `feat/<story-id>-<slug>`.
 
 ## Log (newest first)
 
+- `2026-11-21` — T3 DONE (S6.3). nginx LB over 3 replicas; broadcast reaches clients on every replica exactly once. Live scale-up without restart. 72 tests green.
 - `2026-11-21` — T2 DONE (S6.5 partial). Pooled engine + 2 indexes. Session round trip p50 34ms → 2.5ms. 72 tests green.
 - `2026-11-21` — T1 DONE (S6.1). Cross-instance fanout via Redis verified with 2 processes. 67 tests green.
 - `2026-11-21` — T0 DONE. Repo wired to origin, baseline: 59 tests pass, lint clean, 100 pre-existing pyright errors.

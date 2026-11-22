@@ -6,6 +6,8 @@
 
 ```
 infra/
+├── nginx/
+│   └── nginx.conf             # LB: round-robin over backend replicas, WS upgrade
 ├── postgres/
 │   └── init.sql               # pgvector + schema bootstrap
 ├── grafana/
@@ -28,7 +30,7 @@ infra/
 | **Full stack (recommended)**        | `docker compose up`                                    |
 | Infra only (postgres + redis)       | `docker compose up -d postgres redis`                  |
 | Full stack with observability       | `docker compose --profile observability up`            |
-| Scale backend replicas              | `docker compose up --scale backend=3`                  |
+| Scale backend replicas              | `docker compose up --scale backend=3` (nginx picks up new replicas via DNS; no restart) |
 | Stop all                            | `docker compose down`                                  |
 | Stop and remove volumes             | `docker compose down -v`                               |
 | Rebuild images after code change    | `docker compose build`                                 |
@@ -40,8 +42,8 @@ infra/
 - **No application code in `infra/`.** Configuration only.
 - **Health checks** on every service. Compose gates startup order via `depends_on: condition: service_healthy`.
 - **Secrets** never in `docker-compose.yml`. Use `.env` (git-ignored) + `env_file:` directive.
-- **Ports** are project-pinned: Postgres 5433, Redis 6379, Backend 8000, Frontend 3000, Prometheus 9090, Grafana 3001, OTel collector 4317.
-- **Migrations** run via `backend/docker-entrypoint.sh` on every container start in dev (idempotent with Alembic). In production they will move to a one-shot `release_command`.
+- **Ports** are project-pinned: Postgres 5433, Redis 6379, Backend 8000 (nginx → replicas; backends have no host port), Frontend 3000, Prometheus 9090, Grafana 3001, OTel collector 4317.
+- **Migrations** run once per `docker compose up` in the one-shot `migrate` service; `backend` waits for it (`service_completed_successfully`) and starts with `RUN_MIGRATIONS=false` so scaled replicas never race on DDL. Outside compose, `backend/docker-entrypoint.sh` still migrates by default. In production they will move to a one-shot `release_command`.
 
 ## CI/CD
 

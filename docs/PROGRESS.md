@@ -13,8 +13,8 @@
 | ----------------------- | ---------- |
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
-| Stories DONE / total    | 10 / 39    |
-| Currently IN_PROGRESS   | 1 (S6.3)   |
+| Stories DONE / total    | 12 / 39    |
+| Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 2 (S6.5, S11.2) |
 
@@ -71,7 +71,7 @@
 | ---- | ------ | ----- |
 | S6.1 | DONE | `RedisBus` fanout: per-instance subscribe/unsubscribe by local refcount, publish-only handlers, parallel send with slow-consumer eviction, reconnect + resubscribe. Verified across 2 processes. |
 | S6.2 | TODO   | Go gateway (optional). |
-| S6.3 | IN_PROGRESS | [claude] 2026-11-21 — nginx LB in compose (T3). |
+| S6.3 | DONE | nginx LB (`infra/nginx/nginx.conf`): round-robin, no stickiness, WS upgrade, 1h idle timeout, passive health (max_fails=2/5s), DNS `resolve` so `--scale` needs no nginx restart. Backend has no host port. One-shot `migrate` service. |
 | S6.4 | TODO   | k6 load tests. |
 | S6.5 | PARTIAL | Pool + indexes DONE (T2): QueuePool 5+15, pre_ping; partial `ix_messages_channel_id_id_live (channel_id, id) WHERE deleted_at IS NULL`; `ix_channel_memberships_channel_id`. Read replica + Redis cache TODO. |
 
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S6.3 DONE (T3): nginx on :8000 in front of `--scale backend=3`. 4 and 6 clients spread across 3 replicas each got 1 broadcast exactly once (3/3 runs). Live scale 3→4 picked up without restart. Migrations moved to a one-shot `migrate` service (replicas raced on `alembic upgrade`). 72 tests green.
 - `2026-11-21` — S6.5 PARTIAL (T2): pooled engine replaces NullPool (session round trip p50 34ms → 2.5ms locally). Migration `c7e2a9f4b1d3` adds 2 indexes CONCURRENTLY. `tests/test_db_pool_indexes.py` (5). 72 tests green.
 - `2026-11-21` — S6.1 DONE: Redis Pub/Sub fanout. `services/pubsub.py:RedisBus`, async `ConnectionManager.connect/disconnect`, handlers publish only. `tests/test_pubsub_fanout.py` (8). WS tests now use real Redis.
 - `2026-11-21` — Sprint T0 done: local folder wired to origin @ `c0e7380`; baseline 59 tests green, lint clean, 100 pre-existing pyright errors (see `docs/SPRINT.md` T0).
