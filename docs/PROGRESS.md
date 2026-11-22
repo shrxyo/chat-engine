@@ -80,7 +80,7 @@
 | ID   | Status | Notes |
 | ---- | ------ | ----- |
 | S7.1 | TODO   | structlog is configured but no `RequestIDMiddleware`. |
-| S7.2 | TODO   | OpenTelemetry. |
+| S7.2 | IN_PROGRESS | OpenTelemetry (sprint T6). Claimed 2026-11-21. |
 | S7.3 | PARTIAL | T4 DONE: `/metrics` (instrumentator) + `ws_active_connections`, `messages_broadcast_total`, `redis_pubsub_publish_total`, `message_broadcast_latency_seconds`; `server_ts` on `message.new`; Prometheus (Docker DNS discovery) + Grafana overview dashboard (`--profile observability`). TODO: `db_query_duration_seconds`, embedding metrics (S5.1), Latency/AI Worker/Database dashboards. |
 | S7.4 | TODO   | Sentry. |
 
