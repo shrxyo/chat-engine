@@ -14,9 +14,9 @@
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
 | Stories DONE / total    | 15 / 39    |
-| Currently IN_PROGRESS   | 1 (S12.1)  |
+| Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
-| Currently PARTIAL       | 3 (S6.5, S7.3, S11.2) |
+| Currently PARTIAL       | 4 (S6.5, S7.3, S11.2, S12.1) |
 
 ---
 
@@ -123,7 +123,7 @@
 
 | ID    | Status     | Notes |
 | ----- | ---------- | ----- |
-| S12.1 | IN_PROGRESS | `docs/ARCHITECTURE.md` stub created; needs Mermaid diagrams + decisions + numbers. |
+| S12.1 | PARTIAL    | T9 DONE: as-built Mermaid diagram (nginx → N replicas ↔ Redis, Postgres, Prometheus/Grafana, OTel/Jaeger), corrected WS scaling sequence, measured k6 numbers; ER diagram + decisions already present. README benchmarks section. TODO: `EXPLAIN ANALYZE` top 5 queries; AI pipeline diagram is planned-only (Epic 5). |
 | S12.2 | TODO       | README polish: GIF, badges, live demo link. |
 | S12.3 | TODO       | Three blog posts. |
 | S12.4 | TODO       | Demo video. |
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S12.1 PARTIAL (T9): docs. `docs/ARCHITECTURE.md` as-built diagram, WS scaling section corrected (was still "planned", wrong topic name), measured-performance section and Measured column on targets. README benchmarks (200/500 VU tables, Grafana + Jaeger screenshots). Resume bullets reworded to measured numbers in `docs/SPRINT.md` T9. Sprint complete.
 - `2026-11-21` — S4.3 DONE (T8): reconnect gap fill. Fixed history order (was by random uuid4, so pages and `before=` were not time-ordered); migration `e4b8d2f6a913`. Verified via nginx over 3 replicas: dropped socket → fill returns exactly the 7 missed in order; killed replica → reconnect lands on a live one, fill returns the 5 missed; 201-message gap → `has_more` (client reloads). 129 backend + 25 frontend tests green; pyright 91 → 82.
 - `2026-11-21` — S4.2 DONE (T7): presence via Redis. 3 replicas: two tabs on different replicas → one join, one leave; silent socket → leave after 31s, rejoin on ping; killed replica → leave after 30s, exactly once. WS cleanup now shielded from cancellation (leave was dropped on cancel). `tests/test_presence.py` (16), frontend `PresenceContext`/`ChannelHeader` tests (4). 113 backend + 11 frontend tests green.
 - `2026-11-21` — S7.2 PARTIAL (T6): OpenTelemetry tracing. Verified with 3 replicas: each `message.new` is one trace (11 spans) with `pubsub.deliver` on all 3. `.env.example` now ships `OTEL_EXPORTER_OTLP_ENDPOINT` blank (tracing off); tests force it blank. Screenshot in `docs/benchmarks/otel/`. `tests/test_telemetry.py` (9). 98 tests green.

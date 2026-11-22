@@ -4,7 +4,50 @@
 
 ---
 
-## System overview
+## As built (2026-11-21)
+
+What `docker compose up --scale backend=3` runs today. Dashed boxes are under `--profile observability`.
+
+```mermaid
+graph LR
+  Browser["Browser<br/>Next.js 15 client"]
+  FE["frontend :3000<br/>Next.js server (Auth.js)"]
+  LB["nginx :8000<br/>round-robin, no stickiness<br/>WS upgrade · /metrics → 404"]
+
+  subgraph Replicas["backend × N (FastAPI + WS gateway, stateless)"]
+    B1["backend 1<br/>RedisBus · PresenceStore"]
+    B2["backend 2"]
+    BN["backend N"]
+  end
+
+  PG[("Postgres 16 + pgvector<br/>pool 5+15 per replica")]
+  Redis[("Redis 7<br/>Pub/Sub channel:{id}<br/>presence:* (Lua, TTL 30s)")]
+  Mig["migrate (one-shot)<br/>alembic upgrade head"]
+
+  subgraph Obs["observability profile"]
+    Prom["Prometheus :9090<br/>Docker DNS discovery"]
+    Graf["Grafana :3001"]
+    Col["otel-collector :4317"]
+    Jae["Jaeger :16686"]
+  end
+
+  Browser -->|pages, auth| FE
+  FE -->|/api rewrite| LB
+  Browser -->|REST + WS /ws/channel_id| LB
+  LB --> B1 & B2 & BN
+  B1 & B2 & BN -->|asyncpg| PG
+  B1 & B2 & BN <-->|PUBLISH / SUBSCRIBE| Redis
+  Mig --> PG
+  Prom -.scrape /metrics.-> B1 & B2 & BN
+  Prom --> Graf
+  B1 & B2 & BN -.OTLP/gRPC.-> Col --> Jae
+```
+
+- A message sent on any replica is inserted into Postgres, published once to `channel:{id}`, and delivered by every replica that holds a socket in that channel (`S6.1`). One trace covers the send and every delivering replica (`S7.2`).
+- Presence and gap fill keep clients in sync across replicas and reconnects (`S4.2`, `S4.3`).
+- Not built yet: AI worker (Epic 5), R2 uploads (`S8.3`), Sentry (`S7.4`), Go gateway (`S6.2`), read replica / Redis cache (`S6.5`).
+
+## Target system overview
 
 ```mermaid
 graph TB
@@ -212,28 +255,39 @@ Every backend replica serves its own `/metrics` (one uvicorn process per contain
 
 ---
 
-## WebSocket scaling (planned — `S6.1`)
+## WebSocket scaling (`S6.1`)
 
 ```mermaid
 sequenceDiagram
-  participant C1 as Client on GW-1
-  participant C2 as Client on GW-2
-  participant GW1
-  participant GW2
+  participant C1 as Client on replica 1
+  participant C2 as Client on replica 2
+  participant GW1 as Replica 1
+  participant GW2 as Replica 2
   participant R as Redis
   participant DB as Postgres
 
   C1->>GW1: message.new
   GW1->>DB: INSERT message
   DB-->>GW1: ok
-  GW1->>R: PUBLISH chat:<channel_id> {payload}
-  R-->>GW1: ack
+  GW1->>R: PUBLISH channel:<channel_id> {payload, exclude_user_id, trace}
+  R-->>GW1: message (own subscription)
   R-->>GW2: message
-  GW1->>C1: message.new echo (own optimistic confirm)
+  GW1->>C1: message.new echo (confirms optimistic send)
   GW2->>C2: message.new
 ```
 
-Each gateway maintains a refcount per channel of local subscribers. When the first local client joins, the gateway subscribes to `chat:<channel_id>`; when the last leaves, it unsubscribes. Stateless: any gateway can serve any user → round-robin LB, no sticky sessions.
+Each replica keeps a refcount of local sockets per channel. When the first local socket joins, it subscribes to `channel:<channel_id>`; when the last leaves, it unsubscribes. The sender's replica also delivers from its own subscription, so there is one delivery path. Any replica can serve any user, so nginx round-robins with no sticky sessions.
+
+## Measured performance (`S6.4`, 2026-11-21)
+
+k6 WebSocket flood (`make load-test`) through nginx over 3 replicas on one laptop (Docker Desktop for Mac, 8 CPU / 4 GB VM). Rooms of 10, one message per VU every 5s, tracing and stdout logging off. Full table and findings: `docs/SPRINT.md` T5; reports in `docs/benchmarks/`.
+
+| Concurrent sockets | Messages | Lost | Send → own echo p50 / p95 / p99 | Send → other members p50 / p95 / p99 |
+| ------------------ | -------- | ---- | ------------------------------- | ------------------------------------ |
+| **200** (max sustainable) | 6,981 sent, 62,556 deliveries | 0 | 9 / 109 / 749 ms | 8 / 105 / 489 ms |
+| 500 | 17,270 sent, 154,988 deliveries | 1,918 no echo within 5s (late + lost; older script did not separate them) | 19 ms / 3.42 s / 4.84 s | 75 ms / 8.77 s / 14.2 s |
+
+The 100 ms p99 target is not met on this machine. Known causes: event-loop stalls in the backend (not yet profiled), Docker Desktop VM jitter (an idle asyncio loop stalled up to 435 ms), and uneven placement by nginx (95/95/10 sockets). nginx's `worker_connections` caps the setup at about 4k sockets.
 
 ---
 
@@ -276,11 +330,11 @@ flowchart LR
 
 ## Non-functional targets
 
-| Property                          | Target                                |
-| --------------------------------- | ------------------------------------- |
-| P50 broadcast latency             | <50 ms                                |
-| P99 broadcast latency             | <200 ms                               |
-| Concurrent WS connections (Py)    | 10K (single replica)                  |
+| Property                          | Target                                | Measured (2026-11-21, 3 replicas, laptop) |
+| --------------------------------- | ------------------------------------- | ----------------------------------------- |
+| P50 broadcast latency             | <50 ms                                | 8 ms at 200 sockets                       |
+| P99 broadcast latency             | <200 ms                               | 489 ms at 200 sockets (missed)            |
+| Concurrent WS connections (Py)    | 10K (single replica)                  | 200 sustained over 3 replicas; degrades from 500 |
 | Concurrent WS connections (Go)    | 100K (single replica) — `S6.2`        |
 | Test coverage (backend)           | ≥70% lines                            |
 | CI wall time                      | <5 minutes                            |

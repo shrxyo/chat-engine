@@ -32,7 +32,7 @@
 | — | **CUT LINE** (~8.5h) | | | |
 | T7 | S4.2 | DONE | 1h | B2 |
 | T8 | S4.3 | DONE | 1h | B2 |
-| T9 | S12.1 | IN_PROGRESS | 30m | all |
+| T9 | S12.1 (partial) | DONE | 30m | all |
 
 ---
 
@@ -181,17 +181,29 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 - **Known limits:** edits/deletes made during the gap are not recovered (no event log; they appear on the next full load). `created_at` is set in the app before commit, so a slow transaction can commit a message older than one already delivered, and `after=` misses it (window ≈ commit latency). No browser check of the banner (needs OAuth sign-in); covered by unit tests.
 - Dev-only gotcha seen while testing: hot-reloading replicas share the bind-mounted `__pycache__` with host pytest; one replica crashed on a half-written `.pyc` (`EOFError: marshal data too short`). Cleared caches + restarted. Not a code issue.
 
-## T9 — S12.1 Docs
+## T9 — S12.1 Docs · branch `feat/S12.1-docs` · DONE
 
-- [ ] `docs/ARCHITECTURE.md`: Mermaid diagram (client → nginx → N backends ↔ Redis pub/sub, Postgres, OTel/Prometheus)
-- [ ] README: benchmark section with T5 numbers + screenshots
-- [ ] `docs/PROGRESS.md`: mark finished IDs DONE, add activity log entries
-- [ ] Final resume wording check against measured numbers
+- [x] `docs/ARCHITECTURE.md`: new "As built" Mermaid diagram (browser → frontend / nginx → N backends ↔ Redis pub/sub + presence, Postgres, one-shot migrate, Prometheus → Grafana, OTel collector → Jaeger). The old diagram is kept as "Target system overview". The "WebSocket scaling (planned)" section was out of date (S6.1 is done; topic is `channel:{id}`, not `chat:`; sender's replica delivers from its own subscription) and is corrected. New "Measured performance" section; non-functional targets table gets a "Measured" column.
+- [x] README: "Benchmarks" section with the 200 and 500 VU numbers from `docs/benchmarks/*/summary.json`, the Grafana screenshot, the Jaeger cross-replica trace and the reproduce command.
+- [x] `docs/PROGRESS.md`: T1–T8 IDs were already marked; S12.1 marked PARTIAL (see below), activity log entry added.
+- [x] Final resume wording check (below).
+- Not done (rest of BACKLOG S12.1): `EXPLAIN ANALYZE` for the top 5 queries; the AI pipeline diagram stays "planned" (Epic 5 not built). README GIF/badges/demo link are S12.2.
+
+### Resume wording (checked against `docs/benchmarks/200vu-3r/summary.json`)
+
+The original wording isn't in the repo; these follow the claims B1–B3 above. Drop "sub-100ms" and "high concurrency": p99 is 749 ms (p95 109 ms) and the max sustained load is 200 sockets.
+
+- **B1:** Built a horizontally scalable chat backend in FastAPI + PostgreSQL: stateless WebSocket replicas behind an nginx load balancer, with Redis Pub/Sub fanout; k6 load test of 200 concurrent sockets over 3 replicas delivered 62.5k messages with 0 lost.
+- **B2:** Real-time messaging over Redis + WebSockets with a 9 ms median send-to-echo latency at 200 concurrent sockets; cross-replica presence (atomic Redis Lua scripts with TTLs) and reconnect gap fill keep clients in sync when sockets drop or a replica dies.
+- **B3:** Added OpenTelemetry tracing (one trace covers the send and every delivering replica, by passing trace context in the Pub/Sub message) and Prometheus/Grafana metrics for connections, fanout and broadcast latency.
+
+Numbers allowed in the bullets: 3 replicas, 200 concurrent sockets, 0 lost, 6,981 messages / 62,556 deliveries, p50 9 ms (own echo) / 8 ms (other members). If a percentile is quoted, it must be p99 749 ms (echo) or 489 ms (delivery to others), with "on a laptop".
 
 ---
 
 ## Log (newest first)
 
+- `2026-11-21` — T9 DONE (S12.1 partial). As-built architecture diagram, corrected WS scaling section, measured-performance section; README benchmarks with screenshots; resume bullets reworded to the measured numbers (no "sub-100ms"). Sprint complete.
 - `2026-11-21` — T8 DONE (S4.3). `after=` gap fill + `(created_at, id)` history order (fixes T2's uuid4 ordering finding). Client fills on every reconnect, dedupes, reloads past 200; reconnect banner. Verified on 3 replicas incl. a killed replica. 129 backend + 25 frontend tests green.
 - `2026-11-21` — T7 DONE (S4.2). Redis presence: per-socket TTL entries, atomic Lua join/leave/sweep, `presence.snapshot`, 20s client ping, "N online". Verified on 3 replicas: two tabs → one join/one leave; silent socket and killed replica → one leave after ~30s. 113 backend + 11 frontend tests green.
 - `2026-11-21` — T5 DONE (S6.4). k6 WebSocket flood via nginx over 3 replicas. Max sustainable 200 VUs: 0 lost, msg_rtt p50 9ms / p99 749ms (misses 100ms target). Found blocking stdout logging (worked around in the load-test overlay; app fix is S7.1) and remaining loop stalls (follow-up). 89 tests green.

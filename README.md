@@ -81,6 +81,25 @@ chat-engine/
 | `make -C backend <target>` | See `backend/AGENTS.md`                 |
 | `make -C frontend <target>`| See `frontend/AGENTS.md`                |
 
+## Benchmarks
+
+k6 WebSocket flood through nginx to **3 backend replicas** sharing Redis Pub/Sub and Postgres, run on one laptop (Docker Desktop for Mac, 8 CPU / 4 GB VM). Rooms of 10 users, each sending one message every 5s.
+
+| Concurrent sockets | Messages | Lost | Sender echo p50 / p95 / p99 | Delivery to others p50 / p95 / p99 |
+| ------------------ | -------- | ---- | --------------------------- | ---------------------------------- |
+| **200** | 6,981 sent → 62,556 deliveries | **0** | 9 / 109 / 749 ms | 8 / 105 / 489 ms |
+| 500 | 17,270 sent → 154,988 deliveries | 1,918 not echoed within 5s | 19 ms / 3.4 s / 4.8 s | 75 ms / 8.8 s / 14.2 s |
+
+200 sockets is the most this setup sustains: no messages lost, median under 10 ms, but the p99 misses the 100 ms target. Known causes are event-loop stalls in the backend (not profiled yet), Docker Desktop VM jitter, and nginx placing sockets unevenly (95/95/10). Details: [`docs/SPRINT.md`](docs/SPRINT.md) (T5).
+
+![Grafana during the 200-socket run](docs/benchmarks/200vu-3r/grafana.png)
+
+One message traced across all 3 replicas in Jaeger (send on one, delivery on each):
+
+![Cross-replica trace](docs/benchmarks/otel/cross-instance-trace.png)
+
+Reproduce: `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r`. Reports: [`docs/benchmarks/`](docs/benchmarks/).
+
 ## Status
 
 See [`docs/PROGRESS.md`](docs/PROGRESS.md) for the live status of every story.
