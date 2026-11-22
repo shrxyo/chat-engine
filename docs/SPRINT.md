@@ -30,7 +30,7 @@
 | T5 | S6.4 | DONE | 1.5h | B1, B2 |
 | T6 | S7.2 | DONE | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |
-| T7 | S4.2 | IN_PROGRESS | 1h | B2 |
+| T7 | S4.2 | DONE | 1h | B2 |
 | T8 | S4.3 | TODO | 1h | B2 |
 | T9 | S12.1 | TODO | 30m | all |
 
@@ -155,12 +155,18 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 
 ---
 
-## T7 — S4.2 Presence via Redis · branch `feat/S4.2-presence` · IN_PROGRESS
+## T7 — S4.2 Presence via Redis · branch `feat/S4.2-presence` · DONE
 
-- [ ] Redis key `presence:{user_id}` TTL 30s; refreshed on any WS message + client ping every 20s
-- [ ] Per-channel online set in Redis so presence is correct across instances
-- [ ] On connect, send `presence.snapshot` to the new socket
-- [ ] Tests: snapshot contents; TTL expiry → leave
+- [x] Tests first: `tests/test_presence.py` (16, real Redis, two `PresenceStore`s as two replicas): first socket joins on any replica, second tab doesn't; offline only when the last socket leaves; `presence:{user_id}` TTL; expired entry swept **exactly once** by two racing replicas; refresh keeps it alive; no repeat leave after a sweep; a crashed tab's stale entry can't cause a late leave; silent socket that speaks again rejoins; background sweeper reports offline users; refresh throttled; Redis down / no store degrade to always-announce; sweeper survives Redis errors and a failing callback; over WebSocket: snapshot → join → leave, `ping` accepted silently. `services/presence.py` 100% covered.
+- [x] `services/presence.py`: per-channel sorted set `presence:channel:{id}`, one member per socket (`{user_id}:{conn_id}`) scored by expiry; `presence:{user_id}` string with TTL 30s; `presence:channels` index for the sweeper. Touch / leave / sweep / snapshot are Lua scripts using Redis `TIME`, so they are atomic across replicas and immune to clock skew.
+- [x] Join/leave are per user: two tabs on two replicas give one `presence.join` and one `presence.leave`. Any inbound frame refreshes the entry (throttled to once per ttl/3 per socket); new `ping` event type. Every replica sweeps every 5s and publishes `presence.leave` for expired users, which covers silent sockets and dead replicas.
+- [x] `presence.snapshot` `{channel_id, online_user_ids}` sent to every new socket (field name from `docs/ARCHITECTURE.md`). Config: `PRESENCE_TTL_SECONDS` (30), `PRESENCE_SWEEP_INTERVAL_SECONDS` (5).
+- [x] **Changed in `routers/ws.py`:** register + presence join moved inside the `try`, and the `finally` cleanup runs in a shielded, 2s-bounded anyio scope. Found while testing: TestClient (and a server shutdown) cancels the handler, anyio re-cancels every await in `finally`, so the Redis leave was dropped and the user showed online until the TTL. This also fixes T4's "socket stays registered if cancelled during connect" finding.
+- [x] Existing WS tests consume the snapshot first; tests that used `ping` as an unknown event now use `bogus`.
+- [x] Frontend (rest of S4.2): `WebSocketContext` pings every 20s while open; `PresenceContext` keeps a `Set` of user ids, replaced by each snapshot, then join/leave deltas (`onlineCount` added); channel header shows "N online"; `MembersPanel` dots now get the snapshot. `WSPresencePayload` corrected (backend never sent `user_name`). Tests: `PresenceContext.test.tsx` (3), `ChannelHeader.test.tsx` (1).
+- [x] Verify (scratchpad `presence_check.py`, not committed; nginx → 3 replicas, sockets placed by reading each replica's `ws_active_connections`): B's two tabs on replicas 4 and 2 → A (replica 3) saw 1 join, no leave on closing the first tab, 1 leave on the last; silent socket C → one leave after 31.1s, rejoin on its next ping; `docker kill` of D's replica → one leave for D after 29.6s, delivered by the surviving replicas; A never saw its own leave. 9/9 checks.
+- Results: backend 113 tests pass, lint clean, pyright 91 (unchanged; 0 in new code). Frontend 11 tests pass (baseline 7), lint + typecheck clean.
+- Not done: no browser check of the UI (needs OAuth sign-in); covered by unit tests only. `presence:{user_id}` is written but not read yet. Snapshot has ids only; names come from the members list.
 
 ## T8 — S4.3 Reconnect gap fill · branch `feat/S4.3-gap-fill`
 
@@ -179,6 +185,7 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 
 ## Log (newest first)
 
+- `2026-11-21` — T7 DONE (S4.2). Redis presence: per-socket TTL entries, atomic Lua join/leave/sweep, `presence.snapshot`, 20s client ping, "N online". Verified on 3 replicas: two tabs → one join/one leave; silent socket and killed replica → one leave after ~30s. 113 backend + 11 frontend tests green.
 - `2026-11-21` — T5 DONE (S6.4). k6 WebSocket flood via nginx over 3 replicas. Max sustainable 200 VUs: 0 lost, msg_rtt p50 9ms / p99 749ms (misses 100ms target). Found blocking stdout logging (worked around in the load-test overlay; app fix is S7.1) and remaining loop stalls (follow-up). 89 tests green.
 - `2026-11-21` — T4 DONE (S7.3 partial). `/metrics` + 4 custom metrics + `server_ts`; Prometheus (DNS discovery over replicas) + Grafana overview dashboard. Counts verified exact across 3 replicas. 81 tests green.
 - `2026-11-21` — T3 DONE (S6.3). nginx LB over 3 replicas; broadcast reaches clients on every replica exactly once. Live scale-up without restart. 72 tests green.
