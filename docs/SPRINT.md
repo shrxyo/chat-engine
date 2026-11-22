@@ -30,7 +30,7 @@
 | T5 | S6.4 | DONE | 1.5h | B1, B2 |
 | T6 | S7.2 | DONE | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |
-| T7 | S4.2 | TODO | 1h | B2 |
+| T7 | S4.2 | IN_PROGRESS | 1h | B2 |
 | T8 | S4.3 | TODO | 1h | B2 |
 | T9 | S12.1 | TODO | 30m | all |
 
@@ -155,7 +155,7 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 
 ---
 
-## T7 — S4.2 Presence via Redis · branch `feat/S4.2-presence`
+## T7 — S4.2 Presence via Redis · branch `feat/S4.2-presence` · IN_PROGRESS
 
 - [ ] Redis key `presence:{user_id}` TTL 30s; refreshed on any WS message + client ping every 20s
 - [ ] Per-channel online set in Redis so presence is correct across instances

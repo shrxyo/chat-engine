@@ -14,7 +14,7 @@
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
 | Stories DONE / total    | 13 / 39    |
-| Currently IN_PROGRESS   | 0          |
+| Currently IN_PROGRESS   | 1 (S4.2)   |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 3 (S6.5, S7.3, S11.2) |
 
@@ -51,7 +51,7 @@
 | ID   | Status | Notes |
 | ---- | ------ | ----- |
 | S4.1 | TODO   | Typing indicators (backend rebroadcasts already supported; frontend hook + UI missing). |
-| S4.2 | TODO   | Presence via Redis TTL. |
+| S4.2 | IN_PROGRESS | [claude] 2026-11-21 — Sprint T7. Presence via Redis TTL. |
 | S4.3 | TODO   | Reconnect + gap fill (needs `GET /api/channels/{id}/messages?after=` endpoint). |
 | S4.4 | TODO   | Read receipts + unread counts. |
 
