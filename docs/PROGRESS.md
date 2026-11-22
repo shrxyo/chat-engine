@@ -14,7 +14,7 @@
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
 | Stories DONE / total    | 15 / 39    |
-| Currently IN_PROGRESS   | 0          |
+| Currently IN_PROGRESS   | 1 (S12.1)  |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 3 (S6.5, S7.3, S11.2) |
 
@@ -123,7 +123,7 @@
 
 | ID    | Status     | Notes |
 | ----- | ---------- | ----- |
-| S12.1 | TODO       | `docs/ARCHITECTURE.md` stub created; needs Mermaid diagrams + decisions + numbers. |
+| S12.1 | IN_PROGRESS | `docs/ARCHITECTURE.md` stub created; needs Mermaid diagrams + decisions + numbers. |
 | S12.2 | TODO       | README polish: GIF, badges, live demo link. |
 | S12.3 | TODO       | Three blog posts. |
 | S12.4 | TODO       | Demo video. |

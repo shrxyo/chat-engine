@@ -32,7 +32,7 @@
 | — | **CUT LINE** (~8.5h) | | | |
 | T7 | S4.2 | DONE | 1h | B2 |
 | T8 | S4.3 | DONE | 1h | B2 |
-| T9 | S12.1 | TODO | 30m | all |
+| T9 | S12.1 | IN_PROGRESS | 30m | all |
 
 ---
 
