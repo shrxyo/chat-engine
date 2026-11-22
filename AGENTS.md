@@ -54,7 +54,7 @@ make dev          # backend on :8000, frontend on :3000
 - **TDD.** Write/extend failing tests before implementation (see `.cursor/rules/40-workflow.mdc`).
 - **Plan adherence.** Implement only the task IDs assigned. Do not expand scope. Drift = bug.
 - **Progress file.** Update `docs/PROGRESS.md` when claiming, blocking, or completing a task.
-- **No commits to `main`.** Branch `feat/<story-id>-<slug>` or `fix/<short-slug>`. PR review required.
+- **No direct commits to `main`.** Work on `feat/<story-id>-<slug>` or `fix/<short-slug>`. When done, fast-forward `main` to the branch and push. No PR or review step (solo project).
 - **No secrets** in code, fixtures, or logs. Use env vars; `.env` is git-ignored.
 - **Match existing style.** Run `lint` and `typecheck` before any commit; fix what you authored, leave pre-existing lint untouched unless asked.
 - **Migrations** are append-only. Never edit a merged Alembic revision; create a new one.
@@ -81,7 +81,7 @@ make dev          # backend on :8000, frontend on :3000
 
 A task is **DONE** only when all of these are true:
 
-1. Code merged (or PR ready) for the exact IDs assigned.
+1. Code on `main` (fast-forwarded from the branch) for the exact IDs assigned.
 2. Tests added/updated, all pass locally (`make test`).
 3. `lint` and `typecheck` pass.
 4. `docs/PROGRESS.md` updated to mark the IDs as `DONE`.

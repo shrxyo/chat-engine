@@ -14,7 +14,7 @@ Read `AGENTS.md` and `docs/PROGRESS.md` before any task. Reference work by **bac
 2. **Scope discipline.** Implement only the IDs assigned. Don't refactor adjacent code unprompted.
 3. **Progress file.** Update `docs/PROGRESS.md` on claim → start → done. Reset working tree and re-claim if `git push` is rejected.
 4. **Lint + typecheck must pass** before declaring done.
-5. **No commits to `main`.** Branch `feat/<id>-<slug>`, PR for review.
+5. **No direct commits to `main`.** Branch `feat/<id>-<slug>`; when done, fast-forward `main` to it and push. No PR.
 6. **No secrets** anywhere except `.env` (git-ignored). Use `.env.example` to add new keys.
 7. **`chat-plan.md` is excluded by default.** Use `docs/BACKLOG.md` first; grep the plan only if the compact entry is insufficient.
 
