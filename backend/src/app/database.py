@@ -1,18 +1,22 @@
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import NullPool
 
 from app.config import get_settings
 
 settings = get_settings()
 
-# NullPool is used here so the engine works correctly with async workers
-# and does not hold idle connections open between requests.
+# Pooled (S6.5): reusing connections avoids a TCP + auth handshake per query,
+# which dominated per-message latency under NullPool. pre_ping drops
+# connections Postgres closed while they sat idle.
+# The engine is bound to the event loop that first uses it; code running on
+# another loop (e.g. TestClient) needs its own engine.
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.ENVIRONMENT == "development",
-    poolclass=NullPool,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_pre_ping=True,
 )
 
 AsyncSessionLocal = async_sessionmaker(

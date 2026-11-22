@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_session
+from app.database import engine, get_session
 from app.routers.auth import router as auth_router
 from app.routers.channels import router as channels_router
 from app.routers.dm import router as dm_router
@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         manager.attach_subscriber(None)
         set_bus(None)
         await bus.stop()
+        await engine.dispose()
         logger.info("shutdown complete")
 
 

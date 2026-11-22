@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/chatengine"
     )
+    # Per instance. Peak connections = instances * (size + overflow); keep that
+    # under Postgres max_connections (default 100) when scaling out.
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 15
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

@@ -2,12 +2,23 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column
+from sqlalchemy import Column, Index, text
 from sqlmodel import Field, SQLModel
 
 
 class Message(SQLModel, table=True):
     __tablename__ = "messages"
+    __table_args__ = (
+        # Channel history: WHERE channel_id = ? AND deleted_at IS NULL
+        # ORDER BY id DESC. One index scan, no sort. Partial so soft-deleted
+        # rows don't take up space in it.
+        Index(
+            "ix_messages_channel_id_id_live",
+            "channel_id",
+            "id",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     channel_id: uuid.UUID = Field(foreign_key="channels.id", nullable=False, index=True)

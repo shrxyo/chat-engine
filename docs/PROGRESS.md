@@ -16,7 +16,7 @@
 | Stories DONE / total    | 10 / 39    |
 | Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
-| Currently PARTIAL       | 1 (S11.2) |
+| Currently PARTIAL       | 2 (S6.5, S11.2) |
 
 ---
 
@@ -73,7 +73,7 @@
 | S6.2 | TODO   | Go gateway (optional). |
 | S6.3 | TODO   | Load balancing. |
 | S6.4 | TODO   | k6 load tests. |
-| S6.5 | TODO   | DB scaling: pool, indexes, read replica, Redis cache. |
+| S6.5 | PARTIAL | Pool + indexes DONE (T2): QueuePool 5+15, pre_ping; partial `ix_messages_channel_id_id_live (channel_id, id) WHERE deleted_at IS NULL`; `ix_channel_memberships_channel_id`. Read replica + Redis cache TODO. |
 
 ## EPIC 7 — Observability
 
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S6.5 PARTIAL (T2): pooled engine replaces NullPool (session round trip p50 34ms → 2.5ms locally). Migration `c7e2a9f4b1d3` adds 2 indexes CONCURRENTLY. `tests/test_db_pool_indexes.py` (5). 72 tests green.
 - `2026-11-21` — S6.1 DONE: Redis Pub/Sub fanout. `services/pubsub.py:RedisBus`, async `ConnectionManager.connect/disconnect`, handlers publish only. `tests/test_pubsub_fanout.py` (8). WS tests now use real Redis.
 - `2026-11-21` — Sprint T0 done: local folder wired to origin @ `c0e7380`; baseline 59 tests green, lint clean, 100 pre-existing pyright errors (see `docs/SPRINT.md` T0).
 - `2026-11-21` — Sprint plan created in `docs/SPRINT.md` (S6.1, S6.5, S6.3, S7.3, S6.4, S7.2, then S4.2, S4.3, S12.1). Read it after this file.

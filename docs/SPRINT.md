@@ -24,7 +24,7 @@
 |------|-----------|--------|------|--------|
 | T0 | — (setup) | DONE | 10m | — |
 | T1 | S6.1 | DONE | 2h | B1, B2 |
-| T2 | S6.5 (partial) | TODO | 45m | B1 |
+| T2 | S6.5 (partial) | DONE | 45m | B1 |
 | T3 | S6.3 | TODO | 1h | B1 |
 | T4 | S7.3 | TODO | 1.5h | B2, B3 |
 | T5 | S6.4 | TODO | 1.5h | B1, B2 |
@@ -63,12 +63,17 @@ Branch per story: `feat/<story-id>-<slug>`.
 - **Observed:** ~70–80ms per cross-instance message on localhost. High for local; suspect `NullPool` opening a new Postgres connection per insert. Verify in T2/T4.
 - Not covered: defensive branches (malformed envelope, deliver raising). Known pre-existing limit: one socket per (user, channel) on an instance, so a second tab replaces the first.
 
-## T2 — S6.5 (partial) DB pool + indexes · branch `feat/S6.5-db-pool-indexes`
+## T2 — S6.5 (partial) DB pool + indexes · branch `feat/S6.5-db-pool-indexes` · DONE
 
-- [ ] `database.py`: replace `NullPool` with `pool_size=5, max_overflow=15, pool_pre_ping=True`
-- [ ] New Alembic revision (never edit existing ones): `messages(channel_id, created_at DESC)`, `channel_memberships(user_id)`
-- [ ] Check test suite still works with a pooled engine (event-loop scoping in `conftest.py`)
-- [ ] `alembic upgrade head` + `downgrade -1` round-trip
+- [x] Tests first: `tests/test_db_pool_indexes.py` (5): pool type/size/overflow/pre_ping; both indexes exist; `EXPLAIN` of the message-list query uses the new index with no Sort node; member-by-channel query uses its index
+- [x] `database.py`: `NullPool` → `pool_size=5, max_overflow=15, pool_pre_ping=True` (sizes in `config.py` as `DB_POOL_SIZE` / `DB_MAX_OVERFLOW`). Lifespan now calls `engine.dispose()` on shutdown.
+- [x] New revision `c7e2a9f4b1d3`, built `CONCURRENTLY` in an autocommit block. Indexes declared on the models too, so `create_all` (tests) and `alembic check` agree.
+  - **Changed from the plan:** the list query is `WHERE channel_id AND deleted_at IS NULL ORDER BY id DESC` (not `created_at`), so the index is `(channel_id, id) WHERE deleted_at IS NULL`, as in the BACKLOG S6.5 list. `channel_memberships(user_id)` would duplicate the PK `(user_id, channel_id)`, so the new index is on `channel_id` (member list, DM lookup).
+- [x] Test suite with pooled engine: no change needed. Tests override `get_session`, and `test_ws.py` already gives the TestClient loop its own engine. The new test module runs on the session loop (`loop_scope="session"`) because it never commits.
+- [x] `alembic upgrade head` → `downgrade -1` → `upgrade head` OK. `alembic check`: only drift is the pre-existing `messages_embedding_idx` (not declared on the model; not touched).
+- Results: 72 tests pass. Lint clean. Pyright 91 (unchanged; 0 in new code).
+- **Measured** (scratchpad `pool_bench.py`, 200 iterations, open session + `SELECT 1` + commit, localhost): NullPool p50 34.3ms / p99 283ms → pooled p50 2.5ms / p99 65ms. This accounts for most of T1's ~70–80ms per message. `echo=True` in development adds ~1.7ms p50; T5 should run with `ENVIRONMENT` ≠ development.
+- **Found, not fixed (pre-existing, out of scope):** message pagination orders and cursors by `Message.id`, which is a random `uuid4`. So "newest 50" is not newest-by-time and `before=` cursors skip/repeat messages. Matters for T8 (`after=` gap fill). Fix needs a time-ordered key (UUIDv7 or `(created_at, id)` cursor); would need its own index then.
 
 ## T3 — S6.3 Load balancing · branch `feat/S6.3-nginx-lb`
 
@@ -138,6 +143,7 @@ Branch per story: `feat/<story-id>-<slug>`.
 
 ## Log (newest first)
 
+- `2026-11-21` — T2 DONE (S6.5 partial). Pooled engine + 2 indexes. Session round trip p50 34ms → 2.5ms. 72 tests green.
 - `2026-11-21` — T1 DONE (S6.1). Cross-instance fanout via Redis verified with 2 processes. 67 tests green.
 - `2026-11-21` — T0 DONE. Repo wired to origin, baseline: 59 tests pass, lint clean, 100 pre-existing pyright errors.
 - `2026-11-21` — Sprint file created. All tasks TODO.
