@@ -26,7 +26,7 @@
 | T1 | S6.1 | DONE | 2h | B1, B2 |
 | T2 | S6.5 (partial) | DONE | 45m | B1 |
 | T3 | S6.3 | DONE | 1h | B1 |
-| T4 | S7.3 | TODO | 1.5h | B2, B3 |
+| T4 | S7.3 | IN_PROGRESS | 1.5h | B2, B3 |
 | T5 | S6.4 | TODO | 1.5h | B1, B2 |
 | T6 | S7.2 | TODO | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |

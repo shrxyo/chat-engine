@@ -14,7 +14,7 @@
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
 | Stories DONE / total    | 12 / 39    |
-| Currently IN_PROGRESS   | 0          |
+| Currently IN_PROGRESS   | 1 (S7.3)   |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 2 (S6.5, S11.2) |
 
@@ -81,7 +81,7 @@
 | ---- | ------ | ----- |
 | S7.1 | TODO   | structlog is configured but no `RequestIDMiddleware`. |
 | S7.2 | TODO   | OpenTelemetry. |
-| S7.3 | TODO   | Prometheus + Grafana. |
+| S7.3 | IN_PROGRESS | [claude] [2026-11-21] — T4: /metrics, custom WS/pubsub metrics, Prometheus + Grafana compose. |
 | S7.4 | TODO   | Sentry. |
 
 ## EPIC 8 — Product Features
