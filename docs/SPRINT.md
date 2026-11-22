@@ -31,7 +31,7 @@
 | T6 | S7.2 | DONE | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |
 | T7 | S4.2 | DONE | 1h | B2 |
-| T8 | S4.3 | IN_PROGRESS | 1h | B2 |
+| T8 | S4.3 | DONE | 1h | B2 |
 | T9 | S12.1 | TODO | 30m | all |
 
 ---
@@ -168,11 +168,18 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 - Results: backend 113 tests pass, lint clean, pyright 91 (unchanged; 0 in new code). Frontend 11 tests pass (baseline 7), lint + typecheck clean.
 - Not done: no browser check of the UI (needs OAuth sign-in); covered by unit tests only. `presence:{user_id}` is written but not read yet. Snapshot has ids only; names come from the members list.
 
-## T8 — S4.3 Reconnect gap fill · branch `feat/S4.3-gap-fill` · IN_PROGRESS
+## T8 — S4.3 Reconnect gap fill · branch `feat/S4.3-gap-fill` · DONE
 
-- [ ] `GET /api/channels/{id}/messages?after=<id>` (tests first)
-- [ ] Frontend: track `lastMessageId`, fetch on reconnect, merge + dedupe; >200 gap → full reload
-- [ ] Reconnect banner
+- [x] Tests first: `tests/test_messages.py` (+14): newest page by time; `before=` pages 10 messages with no gap/repeat; `after=` returns newer messages newest-first; after latest → empty; `limit` takes the page right after the cursor + `has_more`; deleted messages skipped and a deleted cursor still works; `created_at` ties broken by id both ways; both cursors → 422; unknown / other-channel cursor → 400; `limit` 200 ok, 201/0 → 422. `tests/test_db_pool_indexes.py`: new index exists, old one gone, list and both cursor directions use it with no Sort.
+- [x] `GET /api/channels/{id}/messages?after=<id>` in new `services/messages.py` (router now thin). **Changed from the plan (needed for `after=` to mean anything):** fixed T2's finding: history was ordered by random uuid4 ids. Now ordered by `(created_at, id)`; a cursor id is resolved to its position and compared as a row. Applies to `before=` too, so infinite scroll is now time-ordered. `limit` max 100 → 200 so a gap fill is one request.
+- [x] Migration `e4b8d2f6a913`: `ix_messages_channel_id_created_at_id_live (channel_id, created_at, id) WHERE deleted_at IS NULL`, CONCURRENTLY, then drops `ix_messages_channel_id_id_live` (unused now). upgrade → downgrade → upgrade OK; `alembic check` drift still only the pre-existing `messages_embedding_idx`.
+- [x] Frontend: `WebSocketContext` exposes `status` (`connecting`/`open`/`reconnecting`) and `reconnectCount` (opens after the first for this channel). Backoff was already 1, 2, 4… cap 30s ±20% jitter. `useMessages`: on each reconnect, `api.messages.listAfter(newest confirmed id, 200)` via `queryClient.fetchQuery`; `mergeGapIntoPage` dedupes by id and sorts by `(created_at, id)` with pending messages kept in front; own pending messages echoed during the gap are reconciled. `has_more` (gap > 200) or 400 → `resetQueries` (reload newest page); network error → `invalidateQueries` (keeps showing data). Empty channel → refetch.
+- [x] `ConnectionBanner` under the channel header: "Reconnecting…" while down, "Reconnected — catching up…" during the fill.
+- [x] Tests: `WebSocketContext.test.tsx` (3), `useMessages.gapfill.test.tsx` (8), `ConnectionBanner.test.tsx` (3). `FakeSocket` moved to `src/test/fakeSocket.ts` (presence test uses it too).
+- [x] Verify (scratchpad `gapfill_check.py`, not committed; nginx → 3 replicas): B closes, A sends 7 → B's `after=` returns exactly those 7 in order; live message on B's new socket also comes back from a later fill (dedupe by id); `docker kill` of B's replica (A on another) → B's socket drops, reconnect via nginx lands on a live replica, fill returns the 5 missed; 201-message gap → 200 + `has_more=true`; newest page is time-ordered. 5/5.
+- Results: backend 129 tests pass (113 before), lint clean, pyright 91 → 82 (the old inline router query is gone; 0 in new code). Frontend 25 tests pass (11 before), lint + typecheck clean.
+- **Known limits:** edits/deletes made during the gap are not recovered (no event log; they appear on the next full load). `created_at` is set in the app before commit, so a slow transaction can commit a message older than one already delivered, and `after=` misses it (window ≈ commit latency). No browser check of the banner (needs OAuth sign-in); covered by unit tests.
+- Dev-only gotcha seen while testing: hot-reloading replicas share the bind-mounted `__pycache__` with host pytest; one replica crashed on a half-written `.pyc` (`EOFError: marshal data too short`). Cleared caches + restarted. Not a code issue.
 
 ## T9 — S12.1 Docs
 
@@ -185,6 +192,7 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 
 ## Log (newest first)
 
+- `2026-11-21` — T8 DONE (S4.3). `after=` gap fill + `(created_at, id)` history order (fixes T2's uuid4 ordering finding). Client fills on every reconnect, dedupes, reloads past 200; reconnect banner. Verified on 3 replicas incl. a killed replica. 129 backend + 25 frontend tests green.
 - `2026-11-21` — T7 DONE (S4.2). Redis presence: per-socket TTL entries, atomic Lua join/leave/sweep, `presence.snapshot`, 20s client ping, "N online". Verified on 3 replicas: two tabs → one join/one leave; silent socket and killed replica → one leave after ~30s. 113 backend + 11 frontend tests green.
 - `2026-11-21` — T5 DONE (S6.4). k6 WebSocket flood via nginx over 3 replicas. Max sustainable 200 VUs: 0 lost, msg_rtt p50 9ms / p99 749ms (misses 100ms target). Found blocking stdout logging (worked around in the load-test overlay; app fix is S7.1) and remaining loop stalls (follow-up). 89 tests green.
 - `2026-11-21` — T4 DONE (S7.3 partial). `/metrics` + 4 custom metrics + `server_ts`; Prometheus (DNS discovery over replicas) + Grafana overview dashboard. Counts verified exact across 3 replicas. 81 tests green.

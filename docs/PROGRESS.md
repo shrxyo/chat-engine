@@ -13,8 +13,8 @@
 | ----------------------- | ---------- |
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
-| Stories DONE / total    | 14 / 39    |
-| Currently IN_PROGRESS   | 1 (S4.3)   |
+| Stories DONE / total    | 15 / 39    |
+| Currently IN_PROGRESS   | 0          |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 3 (S6.5, S7.3, S11.2) |
 
@@ -52,7 +52,7 @@
 | ---- | ------ | ----- |
 | S4.1 | TODO   | Typing indicators (backend rebroadcasts already supported; frontend hook + UI missing). |
 | S4.2 | DONE | Redis presence (T7): per-socket entries in `presence:channel:{id}` (TTL 30s, refreshed by any frame + 20s client ping), `presence:{user_id}` TTL key, atomic Lua join/leave/sweep so N replicas announce each transition once; sweeper → `presence.leave` for silent sockets / dead replicas; `presence.snapshot` on connect; header "N online", members panel dots. |
-| S4.3 | IN_PROGRESS | [claude] 2026-11-21 — Sprint T8. Reconnect + gap fill (needs `GET /api/channels/{id}/messages?after=` endpoint). |
+| S4.3 | DONE | Gap fill (T8): `GET /api/channels/{id}/messages?after=<id>&limit≤200`; history ordered + cursored by `(created_at, id)` (ids are uuid4), index `(channel_id, created_at, id) WHERE deleted_at IS NULL` replaces `(channel_id, id)`. `WebSocketContext` `status` + `reconnectCount`; `useMessages` fills from the newest confirmed id, merges + dedupes; `has_more`/400 → reload newest page. `ConnectionBanner`. Missed edits/deletes not recovered. |
 | S4.4 | TODO   | Read receipts + unread counts. |
 
 ## EPIC 5 — AI Layer
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S4.3 DONE (T8): reconnect gap fill. Fixed history order (was by random uuid4, so pages and `before=` were not time-ordered); migration `e4b8d2f6a913`. Verified via nginx over 3 replicas: dropped socket → fill returns exactly the 7 missed in order; killed replica → reconnect lands on a live one, fill returns the 5 missed; 201-message gap → `has_more` (client reloads). 129 backend + 25 frontend tests green; pyright 91 → 82.
 - `2026-11-21` — S4.2 DONE (T7): presence via Redis. 3 replicas: two tabs on different replicas → one join, one leave; silent socket → leave after 31s, rejoin on ping; killed replica → leave after 30s, exactly once. WS cleanup now shielded from cancellation (leave was dropped on cancel). `tests/test_presence.py` (16), frontend `PresenceContext`/`ChannelHeader` tests (4). 113 backend + 11 frontend tests green.
 - `2026-11-21` — S7.2 PARTIAL (T6): OpenTelemetry tracing. Verified with 3 replicas: each `message.new` is one trace (11 spans) with `pubsub.deliver` on all 3. `.env.example` now ships `OTEL_EXPORTER_OTLP_ENDPOINT` blank (tracing off); tests force it blank. Screenshot in `docs/benchmarks/otel/`. `tests/test_telemetry.py` (9). 98 tests green.
 - `2026-11-21` — S6.4 DONE (T5): k6 load test. 200 VUs over 3 replicas: 6,981/6,981 echoed, p50 9ms, p99 749ms (misses the 100ms target); 500+ VUs degrade badly. Root causes: structlog's blocking stdout writes froze the event loop under Docker Desktop (load-test overlay logs to a file; app fix is S7.1), plus remaining loop stalls (follow-up: profile). nginx caps at ~4k sockets. `tests/test_loadtest_seed.py` (8). 89 tests green.
