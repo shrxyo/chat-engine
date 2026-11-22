@@ -31,7 +31,7 @@
 | T6 | S7.2 | DONE | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |
 | T7 | S4.2 | DONE | 1h | B2 |
-| T8 | S4.3 | TODO | 1h | B2 |
+| T8 | S4.3 | IN_PROGRESS | 1h | B2 |
 | T9 | S12.1 | TODO | 30m | all |
 
 ---
@@ -168,7 +168,7 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 - Results: backend 113 tests pass, lint clean, pyright 91 (unchanged; 0 in new code). Frontend 11 tests pass (baseline 7), lint + typecheck clean.
 - Not done: no browser check of the UI (needs OAuth sign-in); covered by unit tests only. `presence:{user_id}` is written but not read yet. Snapshot has ids only; names come from the members list.
 
-## T8 — S4.3 Reconnect gap fill · branch `feat/S4.3-gap-fill`
+## T8 — S4.3 Reconnect gap fill · branch `feat/S4.3-gap-fill` · IN_PROGRESS
 
 - [ ] `GET /api/channels/{id}/messages?after=<id>` (tests first)
 - [ ] Frontend: track `lastMessageId`, fetch on reconnect, merge + dedupe; >200 gap → full reload

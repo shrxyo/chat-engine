@@ -14,7 +14,7 @@
 | Last updated            | 2026-11-21 |
 | Active branch (default) | `main`     |
 | Stories DONE / total    | 14 / 39    |
-| Currently IN_PROGRESS   | 0          |
+| Currently IN_PROGRESS   | 1 (S4.3)   |
 | Currently BLOCKED       | 0          |
 | Currently PARTIAL       | 3 (S6.5, S7.3, S11.2) |
 
@@ -52,7 +52,7 @@
 | ---- | ------ | ----- |
 | S4.1 | TODO   | Typing indicators (backend rebroadcasts already supported; frontend hook + UI missing). |
 | S4.2 | DONE | Redis presence (T7): per-socket entries in `presence:channel:{id}` (TTL 30s, refreshed by any frame + 20s client ping), `presence:{user_id}` TTL key, atomic Lua join/leave/sweep so N replicas announce each transition once; sweeper → `presence.leave` for silent sockets / dead replicas; `presence.snapshot` on connect; header "N online", members panel dots. |
-| S4.3 | TODO   | Reconnect + gap fill (needs `GET /api/channels/{id}/messages?after=` endpoint). |
+| S4.3 | IN_PROGRESS | [claude] 2026-11-21 — Sprint T8. Reconnect + gap fill (needs `GET /api/channels/{id}/messages?after=` endpoint). |
 | S4.4 | TODO   | Read receipts + unread counts. |
 
 ## EPIC 5 — AI Layer
