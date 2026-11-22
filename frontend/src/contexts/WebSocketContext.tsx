@@ -23,6 +23,8 @@ const WebSocketContext = createContext<WebSocketContextValue | null>(null)
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:8000'
 const RECONNECT_BASE_MS = 1000
 const RECONNECT_MAX_MS = 30_000
+// Keepalive (S4.2): the server marks a socket offline after 30s of silence.
+export const PING_INTERVAL_MS = 20_000
 
 interface WebSocketProviderProps {
   channelId: string
@@ -37,6 +39,7 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
   const handlersRef = useRef<Map<string, Set<WSHandler>>>(new Map())
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const attemptRef = useRef(0)
+  const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // Track whether the provider is still mounted
   const mountedRef = useRef(true)
 
@@ -44,6 +47,11 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
     // next-auth v5: accessToken is surfaced via session callback in auth.ts
     return (session as { accessToken?: string } | null)?.accessToken
   }, [session])
+
+  const stopPing = useCallback(() => {
+    if (pingTimerRef.current) clearInterval(pingTimerRef.current)
+    pingTimerRef.current = null
+  }, [])
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return
@@ -63,6 +71,12 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
       if (!mountedRef.current) return
       attemptRef.current = 0
       setIsConnected(true)
+      stopPing()
+      pingTimerRef.current = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping', payload: {} }))
+        }
+      }, PING_INTERVAL_MS)
     }
 
     ws.onmessage = (event: MessageEvent<string>) => {
@@ -76,6 +90,7 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
     }
 
     ws.onclose = () => {
+      stopPing()
       if (!mountedRef.current) return
       setIsConnected(false)
       wsRef.current = null
@@ -92,7 +107,7 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
     ws.onerror = () => {
       ws.close()
     }
-  }, [channelId, getToken])
+  }, [channelId, getToken, stopPing])
 
   // Connect when the token is available, reconnect if channelId changes
   useEffect(() => {
@@ -102,10 +117,11 @@ export function WebSocketProvider({ channelId, children }: WebSocketProviderProp
     return () => {
       mountedRef.current = false
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      stopPing()
       wsRef.current?.close()
       wsRef.current = null
     }
-  }, [connect])
+  }, [connect, stopPing])
 
   const send = useCallback((type: string, payload: unknown) => {
     const ws = wsRef.current

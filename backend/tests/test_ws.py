@@ -100,6 +100,7 @@ async def test_presence_join_broadcast(
 
     def _listen_a(client: TestClient) -> None:
         with client.websocket_connect(f"/ws/{channel.id}?token={token_a}") as ws_a:
+            assert ws_a.receive_json()["type"] == "presence.snapshot"
             # Receive the presence.join that B's connect triggers
             msg = ws_a.receive_json()
             received_by_a.append(msg)
@@ -143,6 +144,7 @@ async def test_message_new_persists_and_broadcasts(
         TestClient(application) as client,
         client.websocket_connect(f"/ws/{channel.id}?token={token}") as ws,
     ):
+        assert ws.receive_json()["type"] == "presence.snapshot"
         ws.send_json({"type": "message.new", "payload": {"content": "hello ws"}})
         broadcast = ws.receive_json()
 
@@ -191,6 +193,7 @@ async def test_message_edit_updates_db(
         TestClient(application) as client,
         client.websocket_connect(f"/ws/{channel.id}?token={token}") as ws,
     ):
+        assert ws.receive_json()["type"] == "presence.snapshot"
         ws.send_json(
             {
                 "type": "message.edit",
@@ -241,6 +244,7 @@ async def test_message_delete_soft_deletes(
         TestClient(application) as client,
         client.websocket_connect(f"/ws/{channel.id}?token={token}") as ws,
     ):
+        assert ws.receive_json()["type"] == "presence.snapshot"
         ws.send_json(
             {
                 "type": "message.delete",
@@ -284,6 +288,7 @@ async def test_typing_events_no_db_write(
         TestClient(application) as client,
         client.websocket_connect(f"/ws/{channel.id}?token={token}") as ws,
     ):
+        assert ws.receive_json()["type"] == "presence.snapshot"
         # Send typing events — they are excluded from the sender's own receive,
         # so follow up with message.new which DOES echo back.
         ws.send_json({"type": "typing.start", "payload": {}})

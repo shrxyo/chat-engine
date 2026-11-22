@@ -14,9 +14,13 @@ class WSMessageType(StrEnum):
     message_reaction = "message.reaction"
     typing_start = "typing.start"
     typing_stop = "typing.stop"
+    # Keepalive (S4.2): clients send one every 20s; any frame refreshes presence.
+    ping = "ping"
     # Outbound: server → client
     presence_join = "presence.join"
     presence_leave = "presence.leave"
+    # Sent once to a new socket: who is online in the channel, itself included.
+    presence_snapshot = "presence.snapshot"
     error = "error"
 
 
@@ -47,6 +51,11 @@ class MessageReactionPayload(BaseModel):
 # ---------------------------------------------------------------------------
 # Outbound payload models
 # ---------------------------------------------------------------------------
+
+
+class PresenceSnapshotPayload(BaseModel):
+    channel_id: uuid.UUID
+    online_user_ids: list[uuid.UUID]
 
 
 class MessageNewBroadcastPayload(MessageResponse):

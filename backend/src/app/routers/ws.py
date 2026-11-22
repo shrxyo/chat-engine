@@ -2,6 +2,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import anyio
 import structlog
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
@@ -26,15 +27,20 @@ from app.schemas.ws import (
     MessageNewBroadcastPayload,
     MessageNewPayload,
     MessageReactionPayload,
+    PresenceSnapshotPayload,
     WSMessageType,
 )
 from app.services.connection_manager import manager
+from app.services.presence import PresenceConnection, presence_event
+from app.services.presence import connection as presence_connection
 from app.services.pubsub import publish
 
 logger = structlog.get_logger(__name__)
 _tracer = trace.get_tracer(__name__)
 
 router = APIRouter(tags=["websocket"])
+
+_CLEANUP_TIMEOUT = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -81,34 +87,34 @@ async def websocket_endpoint(
     ws: WebSocket,
     token: str | None = Query(default=None),
 ) -> None:
-    # S7.2: the handshake is its own trace. The socket's lifetime is not
-    # traced (see app/telemetry.py), so this span ends once the socket is live.
-    with _tracer.start_as_current_span(
-        "ws.connect", context=Context(), attributes={"chat.channel_id": str(channel_id)}
-    ) as span:
-        # --- Auth & membership check (before accepting) ---
-        user = await _authorize(token, channel_id)
-        if user is None:
-            span.set_status(StatusCode.ERROR, "unauthorized")
-            await ws.close(code=4001)
-            return
-        span.set_attribute("enduser.id", str(user.id))
-
-        # --- Accept & register connection ---
-        await ws.accept()
-        await manager.connect(user.id, channel_id, ws)
-
-        log = logger.bind(user_id=str(user.id), channel_id=str(channel_id))
-
-        join_payload: dict[str, Any] = {
-            "type": WSMessageType.presence_join,
-            "payload": {"user_id": str(user.id), "channel_id": str(channel_id)},
-        }
-        await publish(channel_id, join_payload, exclude_user_id=user.id)
-        log.info("ws_presence_join", event_type=WSMessageType.presence_join)
-
-    # --- Receive loop ---
+    user: User | None = None
+    presence: PresenceConnection | None = None
+    log: Any = logger.bind(channel_id=str(channel_id))
     try:
+        # S7.2: the handshake is its own trace. The socket's lifetime is not
+        # traced (see app/telemetry.py), so this span ends once the socket is live.
+        with _tracer.start_as_current_span(
+            "ws.connect",
+            context=Context(),
+            attributes={"chat.channel_id": str(channel_id)},
+        ) as span:
+            # --- Auth & membership check (before accepting) ---
+            user = await _authorize(token, channel_id)
+            if user is None:
+                span.set_status(StatusCode.ERROR, "unauthorized")
+                await ws.close(code=4001)
+                return
+            span.set_attribute("enduser.id", str(user.id))
+            log = log.bind(user_id=str(user.id))
+
+            # --- Accept & register connection ---
+            # Inside the try: if anything below fails, `finally` unregisters.
+            await ws.accept()
+            await manager.connect(user.id, channel_id, ws)
+            presence = presence_connection(channel_id, user.id)
+            await _join(ws, user, channel_id, presence, log)
+
+        # --- Receive loop ---
         while True:
             try:
                 data: Any = await ws.receive_json()
@@ -117,6 +123,10 @@ async def websocket_endpoint(
             except Exception as exc:
                 log.error("ws_receive_error", error=str(exc))
                 break
+
+            # S4.2: any frame, including ping, keeps the user online.
+            if await presence.refresh():
+                await _announce_join(user, channel_id, log)
 
             msg_type_str: Any = data.get("type") if isinstance(data, dict) else None
             payload_data: dict[str, Any] = (
@@ -157,13 +167,49 @@ async def websocket_endpoint(
     except WebSocketDisconnect:
         pass
     finally:
-        await manager.disconnect(user.id, channel_id, ws)
-        leave_payload: dict[str, Any] = {
-            "type": WSMessageType.presence_leave,
-            "payload": {"user_id": str(user.id), "channel_id": str(channel_id)},
+        # Shielded: if the handler is being cancelled (server shutdown), the
+        # leave must still go out or the user shows online until the TTL.
+        # Bounded so a stuck Redis can't hold up shutdown.
+        with anyio.move_on_after(_CLEANUP_TIMEOUT, shield=True):
+            if user is not None:
+                await manager.disconnect(user.id, channel_id, ws)
+            if user is not None and presence is not None and await presence.leave():
+                await publish(
+                    channel_id,
+                    presence_event(WSMessageType.presence_leave, channel_id, user.id),
+                )
+                log.info("ws_presence_leave", event_type=WSMessageType.presence_leave)
+
+
+async def _join(
+    ws: WebSocket,
+    user: User,
+    channel_id: uuid.UUID,
+    presence: PresenceConnection,
+    log: Any,
+) -> None:
+    """Mark the socket online, announce it if the user was offline, then
+    send the new socket who is online (S4.2)."""
+    if await presence.join():
+        await _announce_join(user, channel_id, log)
+    snapshot = PresenceSnapshotPayload(
+        channel_id=channel_id, online_user_ids=await presence.online()
+    )
+    await ws.send_json(
+        {
+            "type": WSMessageType.presence_snapshot,
+            "payload": snapshot.model_dump(mode="json"),
         }
-        await publish(channel_id, leave_payload)
-        log.info("ws_presence_leave", event_type=WSMessageType.presence_leave)
+    )
+
+
+async def _announce_join(user: User, channel_id: uuid.UUID, log: Any) -> None:
+    await publish(
+        channel_id,
+        presence_event(WSMessageType.presence_join, channel_id, user.id),
+        exclude_user_id=user.id,
+    )
+    log.info("ws_presence_join", event_type=WSMessageType.presence_join)
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +242,8 @@ async def _handle_event(
 
     elif msg_type in (WSMessageType.typing_start, WSMessageType.typing_stop):
         await _handle_typing(user, channel_id, msg_type, log)
+
+    # ping: nothing to do; the receive loop already refreshed presence.
 
 
 async def _handle_message_new(

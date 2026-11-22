@@ -160,11 +160,28 @@ All messages are JSON: `{ "type": <WSMessageType>, "payload": <object> }`.
 | `typing.stop`       | client ↔ server  | `{ user_id, channel_id }`                                          |
 | `presence.join`     | server → client  | `{ user_id, channel_id }`                                          |
 | `presence.leave`    | server → client  | `{ user_id, channel_id }`                                          |
-| `presence.snapshot` | server → client  | `{ online_user_ids: [...] }`                                       |
+| `presence.snapshot` | server → client  | `{ channel_id, online_user_ids: [...] }`, once per new socket, sender included |
+| `ping`              | client → server  | `{}` every 20s; no reply (any inbound frame refreshes presence)    |
 | `notification.new`  | server → client  | `{ notification_id, type, message_id }`                            |
 | `error`             | server → client  | `{ message }`                                                      |
 
 Connection URL: `WS /ws/{channel_id}?token=<jwt>`. Server **must** authenticate and authorize before `ws.accept()`. Auth failure closes with code `4001`.
+
+## Presence (`S4.2`)
+
+Presence state lives in Redis, so all replicas agree on it.
+
+| Key | Type | Content |
+| --- | ---- | ------- |
+| `presence:channel:{channel_id}` | sorted set | One member per open socket, `"{user_id}:{conn_id}"`, score = expiry (epoch ms, Redis `TIME`). Key `PEXPIRE` 4×TTL as a last-resort cleanup. |
+| `presence:{user_id}` | string, `PX` TTL | "Online anywhere" flag, refreshed with the set. Nothing reads it yet. |
+| `presence:channels` | set | Channel ids that have members, iterated by the sweeper. |
+
+- **TTL 30s** (`PRESENCE_TTL_SECONDS`). Any inbound frame refreshes the socket's entry, at most once per TTL/3 per socket. The client sends `ping` every 20s.
+- **Join/leave are per user, not per socket.** `presence.join` goes out only when a user's first live socket in the channel appears, and `presence.leave` only when the last one goes, so two tabs on two replicas produce one join and one leave.
+- **Expiry.** Every replica sweeps every 5s (`PRESENCE_SWEEP_INTERVAL_SECONDS`) and publishes `presence.leave` for users whose last entry expired. That covers sockets that went silent and replicas that died. A silent socket that speaks again rejoins (`presence.join`).
+- **Exactly once.** Touch, leave, sweep and snapshot are Lua scripts, so concurrent replicas can't both report the same transition. They use Redis `TIME`, so replica clock skew doesn't matter. The scripts touch keys of different hash slots, so this assumes a single Redis, not Cluster.
+- **Redis down.** Join/leave fall back to "always announce" (the behaviour before S4.2) and the snapshot contains only the connecting user.
 
 ---
 

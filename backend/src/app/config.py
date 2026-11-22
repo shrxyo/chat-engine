@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Presence (S4.2). A socket that sends nothing (clients ping every 20s)
+    # for the TTL is marked offline by the next sweep on any replica.
+    PRESENCE_TTL_SECONDS: float = 30.0
+    PRESENCE_SWEEP_INTERVAL_SECONDS: float = 5.0
+
     # Auth
     SECRET_KEY: str = "change-me-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours

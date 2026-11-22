@@ -246,6 +246,7 @@ async def test_message_new_trace_covers_persist_publish_and_fanout(
         TestClient(app) as client,
         client.websocket_connect(f"/ws/{channel.id}?token={make_token(user.id)}") as ws,
     ):
+        assert ws.receive_json()["type"] == "presence.snapshot"
         ws.send_json({"type": "message.new", "payload": {"content": "traced"}})
         assert ws.receive_json()["type"] == "message.new"
         wait_for(lambda: len(named(tracing, "ws.message.new")) == 1)
@@ -310,7 +311,8 @@ async def test_ws_connect_groups_auth_queries(
         TestClient(app) as client,
         client.websocket_connect(f"/ws/{channel.id}?token={make_token(user.id)}") as ws,
     ):
-        ws.send_json({"type": "ping"})
+        assert ws.receive_json()["type"] == "presence.snapshot"
+        ws.send_json({"type": "bogus"})
         assert ws.receive_json()["type"] == "error"
         wait_for(lambda: len(named(tracing, "ws.connect")) == 1)
 

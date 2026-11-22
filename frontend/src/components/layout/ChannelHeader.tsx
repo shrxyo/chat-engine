@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query-keys'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
+import { usePresence } from '@/contexts/PresenceContext'
 
 interface ChannelHeaderProps {
   channelId: string
@@ -15,6 +16,7 @@ interface ChannelHeaderProps {
 export function ChannelHeader({ channelId }: ChannelHeaderProps) {
   const { data: session } = useSession()
   const token = (session as { accessToken?: string } | null)?.accessToken
+  const { onlineCount } = usePresence()
 
   const { data: channel, isLoading } = useQuery({
     queryKey: queryKeys.channels.detail(channelId),
@@ -77,6 +79,10 @@ export function ChannelHeader({ channelId }: ChannelHeaderProps) {
           <p className="truncate text-xs text-muted-foreground">{channel.description}</p>
         ) : null}
       </div>
+      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="size-2 rounded-full bg-green-500" aria-hidden />
+        {onlineCount} online
+      </span>
     </header>
   )
 }

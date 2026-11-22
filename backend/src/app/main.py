@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
@@ -20,8 +21,10 @@ from app.routers.dm import router as dm_router
 from app.routers.messages import router as messages_router
 from app.routers.users import router as users_router
 from app.routers.ws import router as ws_router
+from app.schemas.ws import WSMessageType
 from app.services.connection_manager import manager
-from app.services.pubsub import RedisBus, set_bus
+from app.services.presence import PresenceStore, presence_event, set_store
+from app.services.pubsub import RedisBus, publish, set_bus
 from app.telemetry import setup_telemetry
 
 logger = structlog.get_logger(__name__)
@@ -38,9 +41,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await bus.start()
     set_bus(bus)
     manager.attach_subscriber(bus)
+
+    # S4.2: presence. Every replica sweeps expired sockets, including those
+    # of replicas that died; the scripts make each leave go out exactly once.
+    async def announce_offline(channel_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        event = presence_event(WSMessageType.presence_leave, channel_id, user_id)
+        await publish(channel_id, event)
+
+    presence = PresenceStore(
+        settings.REDIS_URL,
+        ttl=settings.PRESENCE_TTL_SECONDS,
+        sweep_interval=settings.PRESENCE_SWEEP_INTERVAL_SECONDS,
+        on_offline=announce_offline,
+    )
+    await presence.start()
+    set_store(presence)
     try:
         yield
     finally:
+        set_store(None)
+        await presence.stop()
         manager.attach_subscriber(None)
         set_bus(None)
         await bus.stop()

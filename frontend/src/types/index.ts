@@ -72,6 +72,8 @@ export type WSMessageType =
   | 'typing.stop'
   | 'presence.join'
   | 'presence.leave'
+  | 'presence.snapshot'
+  | 'ping'
   | 'error'
 
 export interface WSEnvelope<T = unknown> {
@@ -106,7 +108,13 @@ export interface WSTypingPayload {
 
 export interface WSPresencePayload {
   user_id: string
-  user_name: string
+  channel_id: string
+}
+
+/** Sent once to a new socket: everyone online in the channel, itself included. */
+export interface WSPresenceSnapshotPayload {
+  channel_id: string
+  online_user_ids: string[]
 }
 
 export interface WSErrorPayload {

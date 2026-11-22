@@ -122,10 +122,11 @@ async def test_active_connections_gauge_follows_open_sockets(
 
     with TestClient(application) as client:
         with client.websocket_connect(f"/ws/{channel_id}?token={token}") as ws:
+            assert ws.receive_json()["type"] == "presence.snapshot"
             # Wait until the handler is in its receive loop. Leaving the block
             # earlier makes TestClient cancel the handler before it reaches
             # the `finally` that unregisters the socket.
-            ws.send_json({"type": "ping"})
+            ws.send_json({"type": "bogus"})
             assert ws.receive_json()["type"] == "error"
             assert sample("ws_active_connections") == before + 1
         # Exiting waits for the handler to finish, and disconnect() removes
@@ -152,6 +153,7 @@ async def test_message_new_records_broadcast_metrics(
         TestClient(application) as client,
         client.websocket_connect(f"/ws/{channel_id}?token={token}") as ws,
     ):
+        assert ws.receive_json()["type"] == "presence.snapshot"
         sent_at_ms = time.time() * 1000
         ws.send_json({"type": "message.new", "payload": {"content": "metrics"}})
         broadcast = ws.receive_json()
