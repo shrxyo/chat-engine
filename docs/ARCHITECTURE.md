@@ -54,7 +54,7 @@ graph TB
   Browser -.errors.-> Sentry
 ```
 
-"Gateway" and "API" are the same Python process, and any number of them can run side by side (`S6.1`). Each instance runs one `RedisBus` (`services/pubsub.py`): handlers only `publish()` to Redis topic `channel:{id}`, and each instance subscribes to a channel's topic while it holds at least one local socket in that channel, delivering what it receives to those sockets. The sender's own instance also delivers from Redis, so there is exactly one delivery path. If publishing fails, the event is delivered locally (single-instance degraded mode). Delivery is at-most-once (Pub/Sub); clients recover gaps with `S4.3`.
+"Gateway" and "API" are the same Python process, and any number of them can run side by side (`S6.1`). Each instance runs one `RedisBus` (`services/pubsub.py`): handlers only `publish()` to Redis topic `channel:{id}`, and each instance subscribes to a channel's topic while it holds at least one local socket in that channel, delivering what it receives to those sockets. The sender's own instance also delivers from Redis, so there is exactly one delivery path. If publishing fails, the event is delivered locally (single-instance degraded mode). The envelope is `{"payload", "exclude_user_id", "trace"?}`; `trace` carries the OpenTelemetry context (`S7.2`). Delivery is at-most-once (Pub/Sub); clients recover gaps with `S4.3`.
 
 ---
 
@@ -182,6 +182,15 @@ Every backend replica serves its own `/metrics` (one uvicorn process per contain
 
 `server_ts` is wall-clock time, so the cross-replica latency assumes the hosts' clocks agree (true on one Docker host; needs NTP across machines). Negative values are clamped to 0. Dashboard: `infra/grafana/dashboards/overview.json`.
 
+## Tracing (`S7.2`)
+
+`app/telemetry.py` turns tracing on only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (tests force it blank). Path: backend → OTLP/gRPC → `otel-collector` (:4317) → Jaeger (UI :16686), both under `--profile observability`. Spans carry `service.name=chat-engine-backend` and `service.instance.id=<container hostname>`. Sampling uses the standard `OTEL_TRACES_SAMPLER` variables (default: every trace).
+
+- **Auto-instrumented:** FastAPI HTTP routes (`/health`, `/ready`, `/metrics` excluded), SQLAlchemy/asyncpg queries, Redis commands. The pub/sub listener's polling is not a command, so it creates no spans.
+- **WebSockets:** the socket itself is not a span. One span would stay open for the whole connection and put every message into one trace. Instead `ws.connect` (auth + register + presence join) and `ws.message.new` each start a new trace.
+- **`message.new` trace:** `ws.message.new` → `db.persist` (→ `INSERT`, `SELECT`) and `pubsub.publish` (PRODUCER, → `PUBLISH`). `publish()` adds the W3C context to the Redis envelope as `"trace": {"traceparent": ...}`, and every delivering replica opens `pubsub.deliver` (CONSUMER, attribute `chat.local_recipients`) under it. One trace therefore shows the send on replica A and the fanout on replicas A..N. Events published outside a span (typing, presence leave) carry no context and produce no spans. Envelopes without (or with a bad) `trace` still deliver.
+- The load-test overlay disables tracing so k6 runs stay comparable with the T5 baseline.
+
 ---
 
 ## WebSocket scaling (planned — `S6.1`)
@@ -283,6 +292,6 @@ make -C frontend install && make dev-frontend
 
 Dockerfiles live at `backend/Dockerfile` and `frontend/Dockerfile` (multi-stage, non-root runtime user).
 
-Optional `--profile observability` brings up Prometheus (:9090) and Grafana (:3001, overview dashboard as home, anonymous read-only). OTel collector and Jaeger follow in `S7.2`.
+Optional `--profile observability` brings up Prometheus (:9090), Grafana (:3001, overview dashboard as home, anonymous read-only), the OTel collector (:4317) and Jaeger (:16686). Traces are exported only when `.env` sets `OTEL_EXPORTER_OTLP_ENDPOINT` (any value; compose points the backends at `otel-collector`).
 
 Port reservations are listed in `infra/AGENTS.md`.

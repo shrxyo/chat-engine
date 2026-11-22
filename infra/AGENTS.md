@@ -29,7 +29,7 @@ infra/
 | ----------------------------------- | ------------------------------------------------------ |
 | **Full stack (recommended)**        | `docker compose up`                                    |
 | Infra only (postgres + redis)       | `docker compose up -d postgres redis`                  |
-| Full stack with observability       | `docker compose --profile observability up`            |
+| Full stack with observability       | `docker compose --profile observability up` (Prometheus, Grafana, OTel collector, Jaeger; set `OTEL_EXPORTER_OTLP_ENDPOINT` in `.env` to export traces) |
 | Scale backend replicas              | `docker compose up --scale backend=3` (nginx picks up new replicas via DNS; no restart) |
 | Stop all                            | `docker compose down`                                  |
 | Stop and remove volumes             | `docker compose down -v`                               |
@@ -42,7 +42,7 @@ infra/
 - **No application code in `infra/`.** Configuration only.
 - **Health checks** on every service. Compose gates startup order via `depends_on: condition: service_healthy`.
 - **Secrets** never in `docker-compose.yml`. Use `.env` (git-ignored) + `env_file:` directive.
-- **Ports** are project-pinned: Postgres 5433, Redis 6379, Backend 8000 (nginx → replicas; backends have no host port), Frontend 3000, Prometheus 9090, Grafana 3001, OTel collector 4317.
+- **Ports** are project-pinned: Postgres 5433, Redis 6379, Backend 8000 (nginx → replicas; backends have no host port), Frontend 3000, Prometheus 9090, Grafana 3001, OTel collector 4317, Jaeger UI 16686.
 - **Migrations** run once per `docker compose up` in the one-shot `migrate` service; `backend` waits for it (`service_completed_successfully`) and starts with `RUN_MIGRATIONS=false` so scaled replicas never race on DDL. Outside compose, `backend/docker-entrypoint.sh` still migrates by default. In production they will move to a one-shot `release_command`.
 
 ## CI/CD

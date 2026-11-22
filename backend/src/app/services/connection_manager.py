@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 import structlog
 from fastapi import WebSocket
+from opentelemetry import trace
 
 from app.metrics import WS_ACTIVE_CONNECTIONS, observe_broadcast_latency
 
@@ -98,6 +99,8 @@ class ConnectionManager:
             for uid, ws in self._connections.get(channel_id, {}).items()
             if uid != exclude_user_id
         ]
+        # On the pubsub.deliver span when the event was traced (S7.2).
+        trace.get_current_span().set_attribute("chat.local_recipients", len(targets))
         if not targets:
             return
         await asyncio.gather(

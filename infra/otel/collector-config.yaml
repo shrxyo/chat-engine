@@ -1,0 +1,36 @@
+# S7.2 — OpenTelemetry Collector. Backends send OTLP/gRPC here
+# (otel-collector:4317); the collector batches and forwards to Jaeger.
+# Keeping the collector between app and backend means swapping Jaeger for
+# another trace store (Tempo, Honeycomb, ...) is a config change here only.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # Refuse data before the container runs out of memory under a load test.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 100
+  batch:
+    timeout: 1s
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/jaeger]

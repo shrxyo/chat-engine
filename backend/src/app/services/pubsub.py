@@ -9,6 +9,12 @@ event it receives to the local ``ConnectionManager``.
 The publishing instance receives its own event back from Redis, so every
 socket has exactly one delivery path regardless of which instance the
 sender is connected to.
+
+Tracing (S7.2): when ``publish`` runs inside a span, the W3C trace context is
+added to the envelope under ``trace``, and every delivering instance opens a
+``pubsub.deliver`` span under it, so one trace shows the send on instance A
+and the fanout on instances A..N. Events published outside a span (typing,
+presence leave) carry no context and produce no spans.
 """
 
 import asyncio
@@ -20,12 +26,16 @@ from typing import Any, cast
 
 import redis.asyncio as aioredis
 import structlog
+from opentelemetry import trace
+from opentelemetry.propagate import extract, inject
+from opentelemetry.trace import SpanKind, StatusCode
 from redis.asyncio.client import PubSub
 from redis.exceptions import RedisError
 
 from app.metrics import REDIS_PUBSUB_PUBLISH_TOTAL
 
 logger = structlog.get_logger(__name__)
+_tracer = trace.get_tracer(__name__)
 
 Deliver = Callable[[uuid.UUID, dict[str, Any], uuid.UUID | None], Awaitable[None]]
 
@@ -43,6 +53,10 @@ _REDIS_ERRORS = (RedisError, OSError)
 
 def topic_for(channel_id: uuid.UUID) -> str:
     return f"{TOPIC_PREFIX}{channel_id}"
+
+
+def _messaging_attributes(topic: str) -> dict[str, str]:
+    return {"messaging.system": "redis", "messaging.destination.name": topic}
 
 
 def _channel_from_topic(topic: str) -> uuid.UUID | None:
@@ -104,17 +118,40 @@ class RedisBus:
         payload: dict[str, Any],
         exclude_user_id: uuid.UUID | None = None,
     ) -> None:
-        envelope = {
+        topic = topic_for(channel_id)
+        envelope: dict[str, Any] = {
             "payload": payload,
             "exclude_user_id": str(exclude_user_id) if exclude_user_id else None,
         }
+        if not trace.get_current_span().get_span_context().is_valid:
+            await self._send(topic, envelope, channel_id, payload, exclude_user_id)
+            return
+        with _tracer.start_as_current_span(
+            "pubsub.publish",
+            kind=SpanKind.PRODUCER,
+            attributes=_messaging_attributes(topic),
+        ):
+            carrier: dict[str, str] = {}
+            inject(carrier)
+            envelope["trace"] = carrier
+            await self._send(topic, envelope, channel_id, payload, exclude_user_id)
+
+    async def _send(
+        self,
+        topic: str,
+        envelope: dict[str, Any],
+        channel_id: uuid.UUID,
+        payload: dict[str, Any],
+        exclude_user_id: uuid.UUID | None,
+    ) -> None:
         try:
             await self._redis.publish(  # pyright: ignore[reportUnknownMemberType]
-                topic_for(channel_id), json.dumps(envelope, default=str)
+                topic, json.dumps(envelope, default=str)
             )
             REDIS_PUBSUB_PUBLISH_TOTAL.labels(result="ok").inc()
         except _REDIS_ERRORS as exc:
             REDIS_PUBSUB_PUBLISH_TOTAL.labels(result="error").inc()
+            trace.get_current_span().set_status(StatusCode.ERROR, "publish failed")
             # Degrade to single-instance delivery rather than dropping the event.
             logger.warning(
                 "pubsub_publish_failed_local_fallback",
@@ -210,14 +247,43 @@ class RedisBus:
             payload: dict[str, Any] = envelope["payload"]
             exclude = envelope.get("exclude_user_id")
             exclude_user_id = uuid.UUID(exclude) if exclude else None
+            carrier: Any = envelope.get("trace")
         except (ValueError, KeyError, TypeError) as exc:
             logger.warning("pubsub_bad_envelope", topic=topic, error=str(exc))
             return
+
+        parent = None
+        if isinstance(carrier, dict):
+            parent = extract(cast(dict[str, str], carrier))
+        traced = (
+            parent is not None
+            and trace.get_current_span(parent).get_span_context().is_valid
+        )
+        if not traced:
+            await self._deliver_safely(channel_id, payload, exclude_user_id)
+            return
+        with _tracer.start_as_current_span(
+            "pubsub.deliver",
+            context=parent,
+            kind=SpanKind.CONSUMER,
+            attributes=_messaging_attributes(topic),
+        ):
+            await self._deliver_safely(channel_id, payload, exclude_user_id)
+
+    async def _deliver_safely(
+        self,
+        channel_id: uuid.UUID,
+        payload: dict[str, Any],
+        exclude_user_id: uuid.UUID | None,
+    ) -> None:
         try:
             await self._deliver(channel_id, payload, exclude_user_id)
-        except Exception:
+        except Exception as exc:
             # Never let one bad delivery kill the listener for every channel.
             logger.exception("pubsub_deliver_failed", channel_id=str(channel_id))
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, "deliver failed")
 
 
 # ---------------------------------------------------------------------------

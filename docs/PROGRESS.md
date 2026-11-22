@@ -80,7 +80,7 @@
 | ID   | Status | Notes |
 | ---- | ------ | ----- |
 | S7.1 | TODO   | structlog is configured but no `RequestIDMiddleware`. |
-| S7.2 | IN_PROGRESS | OpenTelemetry (sprint T6). Claimed 2026-11-21. |
+| S7.2 | PARTIAL | T6 DONE: `app/telemetry.py` (env-gated), FastAPI/SQLAlchemy/Redis auto-instrumentation, `ws.connect` + `ws.message.new` spans, trace context in the pub/sub envelope so one trace spans every delivering replica; otel-collector + Jaeger (`--profile observability`). TODO: OpenAI spans + worker (Epic 5), Go gateway. |
 | S7.3 | PARTIAL | T4 DONE: `/metrics` (instrumentator) + `ws_active_connections`, `messages_broadcast_total`, `redis_pubsub_publish_total`, `message_broadcast_latency_seconds`; `server_ts` on `message.new`; Prometheus (Docker DNS discovery) + Grafana overview dashboard (`--profile observability`). TODO: `db_query_duration_seconds`, embedding metrics (S5.1), Latency/AI Worker/Database dashboards. |
 | S7.4 | TODO   | Sentry. |
 
@@ -132,6 +132,7 @@
 
 ## Activity log (newest first)
 
+- `2026-11-21` — S7.2 PARTIAL (T6): OpenTelemetry tracing. Verified with 3 replicas: each `message.new` is one trace (11 spans) with `pubsub.deliver` on all 3. `.env.example` now ships `OTEL_EXPORTER_OTLP_ENDPOINT` blank (tracing off); tests force it blank. Screenshot in `docs/benchmarks/otel/`. `tests/test_telemetry.py` (9). 98 tests green.
 - `2026-11-21` — S6.4 DONE (T5): k6 load test. 200 VUs over 3 replicas: 6,981/6,981 echoed, p50 9ms, p99 749ms (misses the 100ms target); 500+ VUs degrade badly. Root causes: structlog's blocking stdout writes froze the event loop under Docker Desktop (load-test overlay logs to a file; app fix is S7.1), plus remaining loop stalls (follow-up: profile). nginx caps at ~4k sockets. `tests/test_loadtest_seed.py` (8). 89 tests green.
 - `2026-11-21` — S7.3 PARTIAL (T4): Prometheus metrics + Grafana. 3 replicas scraped via DNS; 120 messages → counter 120, 360 latency observations (one per delivering replica). Removed `PROMETHEUS_MULTIPROC_DIR` from `.env.example` (crashed startup). nginx hides `/metrics`. 81 tests green.
 - `2026-11-21` — S6.3 DONE (T3): nginx on :8000 in front of `--scale backend=3`. 4 and 6 clients spread across 3 replicas each got 1 broadcast exactly once (3/3 runs). Live scale 3→4 picked up without restart. Migrations moved to a one-shot `migrate` service (replicas raced on `alembic upgrade`). 72 tests green.

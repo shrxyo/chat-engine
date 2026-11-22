@@ -28,7 +28,7 @@
 | T3 | S6.3 | DONE | 1h | B1 |
 | T4 | S7.3 | DONE | 1.5h | B2, B3 |
 | T5 | S6.4 | DONE | 1.5h | B1, B2 |
-| T6 | S7.2 | IN_PROGRESS | 1.5h | B3 |
+| T6 | S7.2 | DONE | 1.5h | B3 |
 | — | **CUT LINE** (~8.5h) | | | |
 | T7 | S4.2 | TODO | 1h | B2 |
 | T8 | S4.3 | TODO | 1h | B2 |
@@ -139,14 +139,19 @@ Run with `make load-test VUS=200 RAMP=1m HOLD=2m SESSION_S=600 RUN_NAME=200vu-3r
 - k6 1.3.0 has no `k6/websockets`; the script uses `k6/experimental/websockets`.
 - Thresholds use the sprint's 100ms target (BACKLOG S6.4 says 200ms).
 
-## T6 — S7.2 OpenTelemetry · branch `feat/S7.2-otel`
+## T6 — S7.2 OpenTelemetry · branch `feat/S7.2-otel` · DONE
 
-- [ ] Deps: `opentelemetry-sdk`, `-exporter-otlp`, instrumentation for `fastapi`, `sqlalchemy`/`asyncpg`, `redis`
-- [ ] `app/telemetry.py`: setup gated by env (`OTEL_EXPORTER_OTLP_ENDPOINT`); no-op in tests
-- [ ] Manual span around `_handle_message_new`: child spans for DB persist, publish, fanout
-- [ ] Propagate trace context in the pub/sub envelope so delivery on instance B links to the send on instance A
-- [ ] Compose: `otel-collector` + `jaeger` (UI :16686), `infra/otel/collector.yaml`
-- [ ] Screenshot of a cross-instance trace → `docs/benchmarks/`
+- [x] Tests first: `tests/test_telemetry.py` (9): no-op without endpoint; tests run with tracing off; resource has service name + replica id; HTTP server spans with probes excluded; delivery on instance B is a child of the publish span on A (same trace, PUBLISH nested); untraced publish → no spans; envelope with no/garbage/non-dict `trace` still delivers; `message.new` trace = root → `db.persist` (→ INSERT) + `pubsub.publish` → `pubsub.deliver`, no long-lived WS server span; `ws.connect` groups the auth queries
+- [x] Deps: `opentelemetry-sdk`, `-exporter-otlp-proto-grpc`, instrumentation for `fastapi`, `sqlalchemy` (covers asyncpg), `redis` (1.45.2 / 0.66b2)
+- [x] `app/telemetry.py`: `setup_telemetry(app, settings)` gated by `OTEL_EXPORTER_OTLP_ENDPOINT`; one global provider per process (idempotent); BatchSpanProcessor → OTLP/gRPC. **No-op in tests:** `tests/__init__.py` blanks the endpoint, because the local `.env` already set it (it was in `.env.example`). `.env.example` now ships it blank.
+- [x] `ws.message.new` span (new root per message) with `db.persist` and `pubsub.publish` children; fanout is `pubsub.deliver` on each replica, with `chat.local_recipients` set by `ConnectionManager.broadcast_to_channel`
+- [x] Trace context in the pub/sub envelope (`"trace": {"traceparent": ...}`), only when publishing inside a span, so typing/presence-leave stay untraced
+- [x] **Added:** `ws.connect` span (auth + accept + register + presence join), else every WS handshake left orphan SELECT root spans. Auth checks folded into `_authorize()` so the span has one exit path. WS paths are excluded from the ASGI instrumentation (a span per socket would last the whole connection).
+- [x] Compose: `otel-collector` (contrib `0.135.0`, :4317) + `jaeger` (`2.10.0`, in-memory, UI :16686) under `--profile observability`; config at `infra/otel/collector-config.yaml` (the name `infra/AGENTS.md` already listed). Backends get `${OTEL_EXPORTER_OTLP_ENDPOINT:+http://otel-collector:4317}`; load-test overlay blanks it to keep runs comparable with T5.
+  - **Collector has no compose healthcheck:** the image is distroless (no shell/wget), so nothing can probe it from inside. Its `health_check` extension serves :13133 on the compose network. Nothing `depends_on` it; the exporter retries in the background.
+- [x] Verify (3 replicas via nginx, 6 sockets in one channel, 5 messages, scratchpad `trace_traffic.py`): all 6 sockets got all 5; Jaeger has 5 `ws.message.new` traces of 11 spans each, every one with `pubsub.deliver` on all 3 replicas. Screenshot + trace JSON → `docs/benchmarks/otel/`.
+- Results: 98 tests pass. Lint clean. Pyright 91 (unchanged; untyped `opentelemetry-instrumentation-*` calls suppressed inline like redis-py).
+- Not done (rest of BACKLOG S7.2): manual spans around OpenAI calls and worker instrumentation (need Epic 5), Go gateway (S6.2, optional).
 
 ---
 

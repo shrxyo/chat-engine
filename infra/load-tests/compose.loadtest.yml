@@ -19,6 +19,8 @@ services:
     environment:
       RELOAD: "false"
       ENVIRONMENT: staging
+      # No tracing (S7.2), so runs stay comparable with the T5 baseline.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
     # Migrations already ran in `migrate`; skip docker-entrypoint.sh.
     entrypoint:
       - sh

@@ -22,6 +22,7 @@ from app.routers.users import router as users_router
 from app.routers.ws import router as ws_router
 from app.services.connection_manager import manager
 from app.services.pubsub import RedisBus, set_bus
+from app.telemetry import setup_telemetry
 
 logger = structlog.get_logger(__name__)
 
@@ -82,6 +83,9 @@ def create_app() -> FastAPI:
     if HTTP_METRICS is not None:
         instrumentator.add(HTTP_METRICS)
     instrumentator.instrument(app).expose(app, include_in_schema=False)
+
+    # S7.2: tracing, only when OTEL_EXPORTER_OTLP_ENDPOINT is set.
+    setup_telemetry(app, settings)
 
     @app.get("/health", tags=["health"])
     async def health() -> dict[str, str]:

@@ -5,6 +5,9 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from jose import JWTError, jwt
+from opentelemetry import trace
+from opentelemetry.context import Context
+from opentelemetry.trace import StatusCode
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +32,7 @@ from app.services.connection_manager import manager
 from app.services.pubsub import publish
 
 logger = structlog.get_logger(__name__)
+_tracer = trace.get_tracer(__name__)
 
 router = APIRouter(tags=["websocket"])
 
@@ -54,6 +58,18 @@ async def _get_user_from_token(
     return await session.get(User, user_id)
 
 
+async def _authorize(token: str | None, channel_id: uuid.UUID) -> User | None:
+    """The token's user if they are a member of *channel_id*, else None."""
+    if token is None:
+        return None
+    async with AsyncSessionLocal() as session:
+        user = await _get_user_from_token(token, session)
+        if user is None:
+            return None
+        membership = await session.get(ChannelMembership, (user.id, channel_id))
+        return user if membership is not None else None
+
+
 # ---------------------------------------------------------------------------
 # Main WebSocket endpoint
 # ---------------------------------------------------------------------------
@@ -65,34 +81,31 @@ async def websocket_endpoint(
     ws: WebSocket,
     token: str | None = Query(default=None),
 ) -> None:
-    # --- Auth & membership check (before accepting) ---
-    if token is None:
-        await ws.close(code=4001)
-        return
-
-    async with AsyncSessionLocal() as session:
-        user = await _get_user_from_token(token, session)
+    # S7.2: the handshake is its own trace. The socket's lifetime is not
+    # traced (see app/telemetry.py), so this span ends once the socket is live.
+    with _tracer.start_as_current_span(
+        "ws.connect", context=Context(), attributes={"chat.channel_id": str(channel_id)}
+    ) as span:
+        # --- Auth & membership check (before accepting) ---
+        user = await _authorize(token, channel_id)
         if user is None:
+            span.set_status(StatusCode.ERROR, "unauthorized")
             await ws.close(code=4001)
             return
+        span.set_attribute("enduser.id", str(user.id))
 
-        membership = await session.get(ChannelMembership, (user.id, channel_id))
-        if membership is None:
-            await ws.close(code=4001)
-            return
+        # --- Accept & register connection ---
+        await ws.accept()
+        await manager.connect(user.id, channel_id, ws)
 
-    # --- Accept & register connection ---
-    await ws.accept()
-    await manager.connect(user.id, channel_id, ws)
+        log = logger.bind(user_id=str(user.id), channel_id=str(channel_id))
 
-    log = logger.bind(user_id=str(user.id), channel_id=str(channel_id))
-
-    join_payload: dict[str, Any] = {
-        "type": WSMessageType.presence_join,
-        "payload": {"user_id": str(user.id), "channel_id": str(channel_id)},
-    }
-    await publish(channel_id, join_payload, exclude_user_id=user.id)
-    log.info("ws_presence_join", event_type=WSMessageType.presence_join)
+        join_payload: dict[str, Any] = {
+            "type": WSMessageType.presence_join,
+            "payload": {"user_id": str(user.id), "channel_id": str(channel_id)},
+        }
+        await publish(channel_id, join_payload, exclude_user_id=user.id)
+        log.info("ws_presence_join", event_type=WSMessageType.presence_join)
 
     # --- Receive loop ---
     try:
@@ -192,36 +205,49 @@ async def _handle_message_new(
     payload_data: dict[str, Any],
     log: Any,
 ) -> None:
-    server_ts = now_ms()
-    try:
-        payload = MessageNewPayload(**payload_data)
-    except ValidationError as exc:
-        await ws.send_json(
-            {"type": WSMessageType.error, "payload": {"message": str(exc)}}
-        )
-        log.warning("ws_validation_error")
-        return
+    # S7.2: one trace per message. Delivery on every replica joins it through
+    # the trace context in the pub/sub envelope.
+    with _tracer.start_as_current_span(
+        "ws.message.new",
+        context=Context(),
+        attributes={"chat.channel_id": str(channel_id), "enduser.id": str(user.id)},
+    ) as span:
+        server_ts = now_ms()
+        try:
+            payload = MessageNewPayload(**payload_data)
+        except ValidationError as exc:
+            span.set_status(StatusCode.ERROR, "validation error")
+            await ws.send_json(
+                {"type": WSMessageType.error, "payload": {"message": str(exc)}}
+            )
+            log.warning("ws_validation_error")
+            return
 
-    async with AsyncSessionLocal() as session:
-        message = Message(
-            channel_id=channel_id,
-            user_id=user.id,
-            content=payload.content,
-            reply_to_id=payload.reply_to_id,
-        )
-        session.add(message)
-        await session.commit()
-        await session.refresh(message)
+        with _tracer.start_as_current_span("db.persist"):
+            async with AsyncSessionLocal() as session:
+                message = Message(
+                    channel_id=channel_id,
+                    user_id=user.id,
+                    content=payload.content,
+                    reply_to_id=payload.reply_to_id,
+                )
+                session.add(message)
+                await session.commit()
+                await session.refresh(message)
+        span.set_attribute("chat.message_id", str(message.id))
 
-    msg_response = MessageNewBroadcastPayload.model_validate(
-        {**MessageResponse.model_validate(message).model_dump(), "server_ts": server_ts}
-    )
-    broadcast: dict[str, Any] = {
-        "type": WSMessageType.message_new,
-        "payload": msg_response.model_dump(mode="json"),
-    }
-    await publish(channel_id, broadcast)
-    MESSAGES_BROADCAST_TOTAL.inc()
+        msg_response = MessageNewBroadcastPayload.model_validate(
+            {
+                **MessageResponse.model_validate(message).model_dump(),
+                "server_ts": server_ts,
+            }
+        )
+        broadcast: dict[str, Any] = {
+            "type": WSMessageType.message_new,
+            "payload": msg_response.model_dump(mode="json"),
+        }
+        await publish(channel_id, broadcast)
+        MESSAGES_BROADCAST_TOTAL.inc()
 
     log.info("ws_message_new", message_id=str(message.id))
     logger.info("embedding job enqueued", message_id=str(message.id))

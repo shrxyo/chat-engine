@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"
     LOG_LEVEL: str = "INFO"
 
+    # Tracing (S7.2). Blank disables it: no provider, no instrumentation.
+    # OTLP/gRPC, e.g. http://localhost:4317 (compose points replicas at the
+    # otel-collector service instead).
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "chat-engine-backend"
+
 
 @lru_cache
 def get_settings() -> Settings:
